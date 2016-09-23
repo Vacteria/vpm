@@ -1,0 +1,1402 @@
+#!/bin/bash
+
+#
+# general evalutation functions
+#
+eval_bol()
+{
+	local FUNC VAL 
+	
+	FUNC="${1//$()}"
+	VAL="${2}"
+	case "X${VAL}" in
+		X0|X1 ) true ;;
+		X     ) warn "$(gettext 'Missing value for %s() function')" "${FUNC}"     ;;
+		X*?   ) warn "$(gettext 'Only bolean value for %s() function')" "${FUNC}" ;;
+	esac
+	
+	return 0
+}
+
+eval_only_global()
+{
+	local FUNC PROC
+	
+	FUNC="${1//()}"
+	PROC="${2}"
+	case "X${PROC}" in
+		Xpkg_setup|Xpkg_compile ) true ;;
+		pkg_*                 ) die "$(gettext 'Only global scope is allowed for %s() function')" "${FUNC}" ;;
+		X                     ) printme -f "die" -l "${FUNCNAME}" msg_mis_args ;;
+		X*?                   ) printme -f "die" msg_forb_scope "${FUNC}" "local" ;;
+	esac
+	
+	return 0
+}
+
+eval_only_local()
+{
+	local FUNC PROC
+	
+	FUNC="${1//()}"
+	PROC="${2}"
+	case "X${PROC}" in
+		Xpkg_setup|Xpkg_compile ) die "$(gettext 'Only local scope is allowed for %s() function')" "${FUNC}" ;;
+		X                       ) printme -f "die" -l "${FUNCNAME}" msg_mis_args ;;
+		X*?                     ) printme -f "die" msg_forb_scope "${FUNC}" "global" ;;
+		pkg_*                   ) true ;;
+	esac
+	
+	return 0
+}
+
+#
+# Default values modification and subtitution
+#
+set-version()
+{
+	if [ -z "${@}" ]
+	then
+		printme -f "log" -l "${FUNCNAME}" msg_mis_args
+		return 0
+	fi
+	
+	VPM_PKGVERSION="${@}"
+	
+	return 0
+}
+
+set-release()
+{
+	if [ -z "${@}" ]
+	then
+		printme -f "log" -l "${FUNCNAME}" msg_mis_args
+		return 0
+	fi
+	
+	VPM_PKGRELEASE="${@}"
+	
+	return 0
+}
+
+set-sections()
+{
+	if [ -z "${@}" ]
+	then
+		printme -f "log" -l "${FUNCNAME}" msg_mis_args
+		return 0
+	fi
+	
+	VPM_PKGSECTIONS="${@}"
+	
+	return 0
+}
+
+set-rundeps()
+{
+	if [ -z "${@}" ]
+	then
+		printme -f "log" -l "${FUNCNAME}" msg_mis_args
+		return 0
+	fi
+	
+	VPM_PKGRUNDEPS="${@}"
+	
+	return 0
+}
+
+set-buildeps()
+{
+	if [ -z "${@}" ]
+	then
+		printme -f "log" -l "${FUNCNAME}" msg_mis_args
+		return 0
+	fi
+	
+	VPM_PKGBUILDEPS="${@}"
+	
+	return 0
+}
+
+set-optdeps()
+{
+	if [ -z "${@}" ]
+	then
+		printme -f "log" -l "${FUNCNAME}" msg_mis_args
+		return 0
+	fi
+	
+	VPM_PKGOPTDEPS="${@}"
+	
+	return 0
+}
+
+set-shlibdeps()
+{
+	if [ -z "${@}" ]
+	then
+		printme -f "log" -l "${FUNCNAME}" msg_mis_args
+		return 0
+	fi
+	
+	VPM_PKGSHLIBDEPS="${@}"
+	
+	return 0
+}
+
+set-conflicts()
+{
+	if [ -z "${@}" ]
+	then
+		printme -f "log" -l "${FUNCNAME}" msg_mis_args
+		return 0
+	fi
+	
+	VPM_PKGCONFLICTS="${@}"
+	
+	return 0
+}
+
+set-blacklist()
+{
+	if [ -z "${@}" ]
+	then
+		printme -f "log" -l "${FUNCNAME}" msg_mis_args
+		return 0
+	fi
+	
+	VPM_PKGBLACKLIST="${@}"
+	
+	return 0
+}
+
+set-pkgarch()
+{
+	if [ -z "${1}" ]
+	then
+		printme -f "log" -l "${FUNCNAME}" msg_mis_args
+		return 0
+	fi
+	
+	case "${DEF_PKGARCH}" in
+		x64 )
+			case "${1}" in
+				ia32|x64|noarch) VPM_PKGPKGARCH="${1}" ;;
+				* ) 
+					printme -f "warn" -l "${FUNCNAME}" msg_no_arch_compat "${1}" "${VPM_PKGPKGARCH}" 
+					VPM_PKGPKGARCH="${1}"
+				;;
+			esac
+		;;
+		x32 )
+			case "${1}" in
+				x32|noarch ) VPM_PKGPKGARCH="${1}" ;;
+				* ) 
+					printme -f "warn" -l "${FUNCNAME}" msg_no_arch_compat "${1}" "${VPM_PKGPKGARCH}" 
+					VPM_PKGPKGARCH="${1}"
+				;;
+			esac
+		;;
+	esac
+	
+	case "${VPM_PKGPKGARCH}" in 
+		noarch) 
+			VPM_PKGLDCONFIG="0"
+			VPM_PKGAUTODEPS="0"
+			VPM_PKGSTRIP="0"
+		;;
+	esac
+	
+	return 0
+}
+
+set-pkgtype()
+{
+	if [ -z "${1}" ]
+	then
+		printme -f "log" -l "${FUNCNAME}" msg_mis_args
+		return 0
+	fi
+		
+	case "${1}" in
+		metapkg|binpkg|fakepkg) 
+			VPM_PKGPKGTYPE="${1}"
+			VPM_PKGLDCONFIG="0"
+			VPM_PKGAUTODEPS="0"
+			VPM_PKGSTRIP="0"
+			case "${VPM_PKGPKGTYPE}" in
+				metapkg|fakepkg) VPM_PKGUNPACK="0" ;;
+			esac
+		;;
+		* ) printme -f "warn" -l "${FUNCNAME}" msg_no_prop_val ${1} ;;
+	esac
+	
+	return 0
+}
+
+set-pkgpatch()
+{
+	if [ -z "${1}" ]
+	then
+		printme -f "log" -l "${FUNCNAME}" msg_mis_args
+		return 0
+	fi
+	eval_bol "${FUNCNAME}" "${1}"
+	eval_only_global "${FUNCNAME}" "${VPM_CUR_FUNCTION}" 
+	
+	VPM_PKGPATCH="${1}"
+
+	return 0
+}
+
+set-sources()
+{
+	if [ -z "${1}" ]
+	then
+		printme -f "log" -l "${FUNCNAME}" msg_mis_args
+		return 0
+	fi
+	
+	eval_only_global "${FUNCNAME}" "${VPM_CUR_FUNCTION}" 
+
+	VPM_PKGSOURCES="${@}"
+
+	return 0
+}
+
+set-buildon()
+{
+	local I
+	
+	for I in ${@}
+	do
+		case "${I}" in
+			x32|x64) VPM_PKGBUILDON="${VPM_PKGBUILDON} ${I}" ;;
+			*      ) printme -f "warn" -l "${FUNCNAME}" msg_no_prop_val "${I}" ;;
+		esac
+	done
+	
+	VPM_PKGBUILDON="$(trim ${VPM_PKGBUILDON})"
+	
+	return 0
+}
+
+set-holdon()
+{
+	local I
+	
+	VPM_PKGHOLDON=""
+	
+	for I in ${@}
+	do
+		case "${I}" in
+			none) VPM_PKGHOLDON="${I}" ; break ;;
+			all ) VPM_PKGHOLDON="${I}" ; break ;;
+			install|remove|upgrade|config) VPM_PKGHOLDON="${VPM_PKGHOLDON} ${I}" ;;
+		esac
+	done
+	
+	VPM_PKGHOLDON="$(trim ${VPM_PKGHOLDON})"
+
+	return 0
+}
+
+set-ldconfig()
+{
+	eval_bol "${FUNCNAME}" "${1}"
+	VPM_PKGLDCONFIG="${1:-1}"
+	
+	return 0
+}
+
+set-autodeps()
+{
+	eval_bol "${FUNCNAME}" "${1}"
+	VPM_PKGAUTODEPS="${1:-1}"
+	
+	return 0
+}
+
+set-strip()
+{
+	eval_bol "${FUNCNAME}" "${1}"
+	VPM_PKGSTRIP="${1:-1}"
+
+	return 0
+}
+
+set-mkpkg()
+{
+	eval_bol "${FUNCNAME}" "${1}"
+	VPM_PKGMKPKG="${1:-1}"
+
+	return 0
+}
+
+rm-empty()
+{
+	eval_bol "${FUNCNAME}" "${1}"
+	VPM_PKGRMEMPTY="${1:-0}"
+	
+	return 0
+}
+
+rm-libtool()
+{
+	eval_bol "${FUNCNAME}" "${1}"
+	VPM_PKGRMLIBTOOL="${1:-1}"
+
+	return 0
+}
+
+set-perms()
+{
+	eval_bol "${FUNCNAME}" "${1}"
+	VPM_PKGSETPERMS="${1:-1}"
+
+	return 0
+}
+
+set-unpack()
+{
+	if [ -z "${1}" ]
+	then
+		printme -f "log" -l "${FUNCNAME}" msg_mis_args
+		return 0
+	fi
+
+	eval_only_global "${FUNCNAME}" "${VPM_CUR_FUNCTION}" 
+
+	case "${1}" in
+		0|1 ) 
+			VPM_PKGUNPACK="${1}"
+			VPM_WORKDIR=""
+		;;
+		*?  ) 
+			VPM_WORKDIR="${VPM_BUILDIR}/${1##${VPM_BUILDIR}/}"
+			VPM_PKGUNPACK="1"
+		;;
+	esac
+	
+	return 0
+}
+
+set-filesname()
+{
+	if [ -z "${1}" ]
+	then
+		printme -f "log" -l "${FUNCNAME}" msg_mis_args
+		return 0
+	fi
+	
+	VPM_PKGFILESNAME="${1}"
+	
+	return 0
+}
+
+set-kpkg()
+{
+	local INPUT MYTYPE
+
+	if [ -z "${1}" ]
+	then
+		printme -f "die" -l "${FUNCNAME}" msg_mis_args
+		return 0
+	fi
+	INPUT="$(only_lower $(trim_start_end_dashes ${1}))"
+
+	case "${INPUT}" in
+		vct|xen|ovz|pae|none ) 
+			if [ "${INPUT}" == "none" ]
+			then
+				MYTYPE=""
+			else
+				MYTYPE="-${INPUT}"
+			fi
+		;;
+		* ) printme -f "die" -l "${FUNCNAME}" msg_invalid_ktype "${INPUT}"
+	esac
+
+	VPM_KERNEL_TYPE="${INPUT}"
+	VPM_KERNEL_NAME="linux${MYTYPE}"
+	VPM_KERNEL_VERSION="${VPM_VERSION}"
+	VPM_KERNEL_MODSVER="${VPM_VERSION}${MYTYPE}"
+	VPM_KERNEL_SOURCES="/usr/src/${VPM_KERNEL_NAME}-${VPM_KERNEL_VERSION}"
+	VPM_KERNEL_MODULES="/lib/modules/${VPM_KERNEL_MODSVER}"
+	VPM_KERNEL_HEADERS="/usr/src/${VPM_KERNEL_NAME}-headers-${VPM_KERNEL_VERSION}"
+	VPM_KERNEL_FIRMWARE="/lib/firmware"
+
+	return 0
+}
+
+
+#
+# GNU Make modifiers
+#
+set-makeflags()
+{
+	eval_bol "${FUNCNAME}" "${1}"
+	VPM_PKGMAKEFLAGS="${1}"
+
+	return 0
+}
+
+set-maketest()
+{
+	eval_bol "${FUNCNAME}" "${1}"
+	VPM_PKGMAKETEST="${1}"
+
+	return 0
+}
+
+before-config()
+{
+	local INPUT
+
+	INPUT="$(trim ${@})"
+	if [ -z "${INPUT}" ]
+	then
+		printme -f "log" -l "${FUNCNAME}" msg_mis_args
+		return 0
+	fi
+	
+	VPM_PKGBCONFIG="${INPUT}"
+
+	return 0
+}
+
+before-make()
+{
+	local INPUT
+
+	INPUT="$(trim ${@})"
+	if [ -z "${INPUT}" ]
+	then
+		printme -f "log" -l "${FUNCNAME}" msg_mis_args
+		return 0
+	fi
+
+	VPM_PKGBMAKE="${INPUT}"
+
+	return 0
+}
+
+before-install()
+{
+	local INPUT
+
+	INPUT="$(trim ${@})"
+	if [ -z "${INPUT}" ]
+	then
+		printme -f "log" -l "${FUNCNAME}" msg_mis_args
+		return 0
+	fi
+	
+	VPM_PKGBINSTALL="${INPUT}"
+
+	return 0
+}
+
+unset-options()
+{
+	local INPUT O
+
+	INPUT="$(trim ${@})"
+	if [ -z "${INPUT}" ]
+	then
+		printme -f "log" -l "${FUNCNAME}" msg_mis_args
+		return 0
+	fi
+	
+	for O in ${INPUT}
+	do
+		VPM_PKGUOPTS+=" ${O}"
+	done
+
+	return 0
+}
+
+unset-makeflags()
+{
+	VPM_PKGMAKEFLAGS="0"
+	
+	return 0
+}
+
+#
+# GCC Compiler flags and dynamic libraries
+#
+
+set-cflags()
+{	
+	local INPUT="$(trim ${@})"
+
+	if [ -z "${INPUT}" ]
+	then
+		printme -f "log" -l "${FUNCNAME}" msg_mis_args
+		return 0
+	fi
+	
+	VPM_PKGCFLAGS="${INPUT}"
+
+	return 0
+}
+
+set-cxxflags()
+{
+	local INPUT="$(trim ${@})"
+
+	if [ -z "${INPUT}" ]
+	then
+		printme -f "log" -l "${FUNCNAME}" msg_mis_args
+		return 0
+	fi
+	
+	VPM_PKGCXXFLAGS="${INPUT}"
+
+	return 0
+}
+
+set-cxxflags()
+{
+	local INPUT="$(trim ${@})"
+
+	if [ -z "${INPUT}" ]
+	then
+		printme -f "log" -l "${FUNCNAME}" msg_mis_args
+		return 0
+	fi
+	
+	VPM_PKGCPPFLAGS="${INPUT}"
+
+	return 0
+}
+
+set-bothflags()
+{
+	local INPUT="$(trim ${@})"
+
+	if [ -z "${INPUT}" ]
+	then
+		printme -f "log" -l "${FUNCNAME}" msg_mis_args
+		return 0
+	fi
+	
+	VPM_PKGCFLAGS="${INPUT}"
+	VPM_PKGCXXFLAGS="${INPUT}"
+	
+	return 0
+}
+
+set-allflags()
+{
+	local INPUT="$(trim ${@})"
+
+	if [ -z "${INPUT}" ]
+	then
+		printme -f "log" -l "${FUNCNAME}" msg_mis_args
+		return 0
+	fi
+	
+	VPM_PKGCFLAGS="${INPUT}"
+	VPM_PKGCXXFLAGS="${INPUT}"
+	VPM_PKGCPPFLAGS="${INPUT}"
+
+	return 0
+}
+
+set-ldflags()
+{
+	local INPUT="$(trim ${@})"
+
+	if [ -z "${INPUT}" ]
+	then
+		printme -f "log" -l "${FUNCNAME}" msg_mis_args
+		return 0
+	fi
+	
+	VPM_PKGLDFLAGS="${INPUT}"
+
+	return 0
+}
+
+set-cc()
+{
+	local INPUT="${@}"
+
+	if [ -z "${INPUT}" ]
+	then
+		printme -f "warn" msg_mis_args -l "${FUNCNAME}"
+	else
+		VPM_TOOLCHAIN_CC="${INPUT}"
+	fi
+
+	return 0
+}
+
+set-cxx()
+{
+	local INPUT="${@}"
+
+	if [ -z "${INPUT}" ]
+	then
+		printme -f "warn" msg_mis_args -l "${FUNCNAME}"
+	else
+		VPM_TOOLCHAIN_CXX="${INPUT}"
+	fi
+
+	return 0
+}
+
+strip-cflags()
+{
+	local FLAG INPUT
+		
+	INPUT="$(trim ${@})"
+	if [ -n "${INPUT}" ]
+	then
+		for FLAG in "${INPUT}"
+		do
+			VPM_PKGCFLAGS="$(echo ${VPM_PKGCFLAGS} | sed -e "s#${FLAG}##g")"
+		done
+	fi
+	
+	VPM_PKGCFLAGS="$(trim ${VPM_PKGCFLAGS})"
+	
+	return 0
+}
+
+strip-cxxflags()
+{
+	local FLAG INPUT
+	
+	INPUT="$(trim ${@})"
+	if [ -n "${INPUT}" ]
+	then
+		for FLAG in "${INPUT}"
+		do
+			VPM_PKGCXXFLAGS="$(echo ${VPM_PKGCXXFLAGS} | sed -e "s#${FLAG}##g")"
+		done
+	fi
+
+	VPM_PKGCXXFLAGS="$(trim ${VPM_PKGCXXFLAGS})"
+
+	return 0
+}
+
+strip-cppflags()
+{
+	local FLAG INPUT
+	
+	INPUT="$(trim ${@})"
+	if [ -n "${INPUT}" ]
+	then
+		for FLAG in "${INPUT}"
+		do
+			VPM_PKGCPPFLAGS="$(echo ${VPM_PKGCPPFLAGS} | sed -e "s#${FLAG}##g")"
+		done
+	fi
+
+	VPM_PKGCPPFLAGS="$(trim ${VPM_PKGCPPFLAGS})"
+
+	return 0
+}
+
+strip-ldflags()
+{
+	local FLAG INPUT
+	
+	INPUT="$(trim ${@})"
+	if [ -n "${INPUT}" ]
+	then
+		for FLAG in "${INPUT}"
+		do
+			VPM_PKGLDFLAGS="$(trim $(echo ${VPM_PKGLDFLAGS} | sed -e "s#${FLAG}##g") )"
+		done
+	fi
+
+	VPM_PKGLDFLAGS="$(trim ${VPM_PKGLDFLAGS})"
+
+	return 0
+}
+
+strip-bothflags()
+{
+	local FLAG INPUT
+	
+	INPUT="$(trim ${@})"
+	if [ -n "${INPUT}" ]
+	then
+		for FLAG in "${INPUT}"
+		do
+			VPM_PKGCFLAGS="$(echo ${VPM_PKGCFLAGS} | sed -e "s#${FLAG}##g")"
+			VPM_PKGCXXFLAGS="$(echo ${VPM_PKGCXXFLAGS} | sed -e "s#${FLAG}##g")"
+		done
+	fi
+
+	VPM_PKGCFLAGS="$(trim ${VPM_PKGCFLAGS})"
+	VPM_PKGCXXFLAGS="$(trim ${VPM_PKGCXXFLAGS})"
+
+	return 0
+}
+
+strip-allflags()
+{
+	local FLAG INPUT
+	
+	INPUT="$(trim ${@})"
+	if [ -n "${INPUT}" ]
+	then
+		for FLAG in "${INPUT}"
+		do
+			VPM_PKGCFLAGS="$(echo ${VPM_PKGCFLAGS} | sed -e "s#${FLAG}##g")"
+			VPM_PKGCXXFLAGS="$(echo ${VPM_PKGCXXFLAGS} | sed -e "s#${FLAG}##g")"
+			VPM_PKGCPPFLAGS="$(echo ${VPM_PKGCPPFLAGS} | sed -e "s#${FLAG}##g")"
+		done
+	fi
+
+	VPM_PKGCFLAGS="$(trim ${VPM_PKGCFLAGS})"
+	VPM_PKGCXXFLAGS="$(trim ${VPM_PKGCXXFLAGS})"
+	VPM_PKGCPPFLAGS="$(trim ${VPM_PKGCPPFLAGS})"
+
+	return 0
+}
+
+add-cflags()
+{
+	local FLAG INPUT
+	
+	INPUT="$(trim ${@})"
+	if [ -n "${INPUT}" ]
+	then
+		for FLAG in "${INPUT}"
+		do
+			VPM_PKGCFLAGS="${VPM_PKGCFLAGS} ${FLAG}"
+		done
+	fi
+
+	return 0
+}
+
+add-cxxflags()
+{
+	local FLAG INPUT
+	
+	INPUT="$(trim ${@})"
+	if [ -n "${INPUT}" ]
+	then
+		for FLAG in "${INPUT}"
+		do
+			VPM_PKGCXXFLAGS+=" ${FLAG}"
+		done
+	fi
+	
+	VPM_PKGCXXFLAGS="$(trim ${VPM_PKGCXXFLAGS})"
+	
+	return 0
+}
+
+add-cppflags()
+{
+	local FLAG INPUT
+	
+	INPUT="$(trim ${@})"
+	if [ -n "${INPUT}" ]
+	then
+		for FLAG in "${INPUT}"
+		do
+			VPM_PKGCPPFLAGS+=" ${FLAG}"
+		done
+	fi
+	
+	VPM_PKGCPPFLAGS="$(trim ${VPM_PKGCPPFLAGS})"
+	
+	return 0
+}
+
+add-bothflags()
+{
+	local FLAG INPUT
+	
+	INPUT="$(trim ${@})"
+	if [ -n "${INPUT}" ]
+	then
+		for FLAG in "${INPUT}"
+		do
+			VPM_PKGCFLAGS="${VPM_PKGCFLAGS} ${FLAG}"
+			VPM_PKGCXXFLAGS="${VPM_PKGCXXFLAGS} ${FLAG}"
+		done
+	fi
+	
+	return 0
+}
+
+add-allflags()
+{
+	local FLAG INPUT
+	
+	INPUT="$(trim ${@})"
+	if [ -n "${INPUT}" ]
+	then
+		for FLAG in "${INPUT}"
+		do
+			VPM_PKGCFLAGS+=" ${FLAG}"
+			VPM_PKGCXXFLAGS+=" ${FLAG}"
+			VPM_PKGCPPFLAGS+=" ${FLAG}"
+		done
+	fi
+	
+	VPM_PKGCFLAGS+="$(trim ${VPM_PKGCFLAGS})"
+	VPM_PKGCXXFLAGS+="$(trim ${VPM_PKGCXXFLAGS})"
+	VPM_PKGCPPFLAGS+="$(trim ${VPM_PKGCPPFLAGS})"
+				
+	return 0
+}
+
+add-ldflags()
+{
+	local FLAG INPUT
+	
+	INPUT="$(trim ${@})"
+	if [ -n "${INPUT}" ]
+	then
+		for FLAG in "${INPUT}"
+		do
+			VPM_PKGLDFLAGS+=" ${FLAG}"
+		done
+	fi
+	
+	VPM_PKGLDFLAGS="$(trim ${VPM_PKGLDFLAGS})"
+	
+	return 0
+}
+
+unset-cflags()
+{
+	unset VPM_PKGCFLAGS
+	unset CFLAGS
+
+	return 0
+}
+
+unset-cxxflags()
+{
+	unset VPM_PKGCXXFLAGS
+	unset CXXFLAGS
+
+	return 0
+}
+
+unset-cppflags()
+{
+	unset VPM_PKGCPPFLAGS
+	unset CPPFLAGS
+
+	return 0
+}
+
+unset-bothflags()
+{
+	unset-cflags
+	unset-cxxflags
+
+	return 0
+}
+
+unset-ldflags()
+{
+	unset VPM_PKGLDFLAGS
+	unset LDFLAGS
+
+	return 0
+}
+
+unset-allflags()
+{
+	unset-cflags
+	unset-cxxflags
+	unset-cppflags
+	unset-ldflags
+	
+	return 0
+}
+
+unset-pkgconfig()
+{
+	unset VPM_PKGCPATH
+	unset PKG_CONFIG_PATH
+
+	return 0
+}
+
+replace-cflags()
+{
+	local TARGET="${1}"
+	local REPLACE_FOR="${2}"
+
+	if (( $# < 2 ))
+	then
+		printme -f "warn" msg_mis_args -l "${FUNCNAME}"
+		return 0
+	else
+		[ -n "${VPM_PKGCFLAGS}" ] && VPM_PKGCFLAGS="$(echo ${VPM_PKGCFLAGS} | sed -e "s#${1}#${2}#g")"
+	fi
+
+	return 0
+}
+
+replace-cxxflags()
+{
+	local TARGET="${1}"
+	local REPLACE_FOR="${2}"
+
+	if (( $# < 2 ))
+	then
+		printme -f "warn" msg_mis_args -l "${FUNCNAME}"
+		return 0
+	else
+		[ -n "${VPM_PKGCXXFLAGS}" ] && VPM_PKGCXXFLAGS="$(echo ${VPM_PKGCXXFLAGS} | sed -e "s#${1}#${2}#g")"
+	fi
+
+	return 0
+}
+
+replace-bothflags()
+{
+	local TARGET="${1}"
+	local REPLACE_FOR="${2}"
+
+	if (( $# < 2 ))
+	then
+		printme -f "warn" msg_mis_args -l "${FUNCNAME}"
+		return 0
+	else		
+		[ -n "${VPM_PKGCFLAGS}" ]   && VPM_PKGCFLAGS="$(echo ${VPM_PKGCFLAGS} | sed -e "s#${1}#${2}#g")"
+		[ -n "${VPM_PKGCXXFLAGS}" ] && VPM_PKGCXXFLAGS="$(echo ${VPM_PKGCXXFLAGS} | sed -e "s#${1}#${2}#g")"
+	fi
+
+	return 0
+}
+
+replace-ldflags()
+{
+	local TARGET="${1}"
+	local REPLACE_FOR="${2}"
+
+	if (( $# < 2 ))
+	then
+		printme -f "warn" msg_mis_args -l "${FUNCNAME}"
+		return 0
+	else
+		[ -n "${VPM_PKGLDFLAGS}" ] && VPM_PKGLDFLAGS="$(echo ${VPM_PKGLDFLAGS} | sed -e "s#${1}#${2}#g")"
+	fi
+
+	return 0
+}
+
+#
+# make and install paths modifiers
+#
+add-destdir()
+{
+	# Aappend path to VPM_PKGDESTDIR
+	# ej.
+	# add-destdir "/usr" -> VPM_PKGDESTDIR="${VPM_PKGDESTDIR}/usr"
+	#
+	
+	local INPUT="${@}"
+	
+	if [ "x${INPUT}" == "x" ]
+	then
+		printme -f "warn" msg_mis_args -l "${FUNCNAME}"
+	else
+		VPM_OLD_DESTDIR="${VPM_PKGDESTDIR}"
+		VPM_PKGDESTDIR="$(trim_slashes "${VPM_PKGDESTDIR}/${INPUT}")"
+		VPM_PKGDIR="${VPM_OLD_DESTDIR}"
+		P="${VPM_PKGDIR}"
+		VPM_PKGINSTCMD="${VPM_PKGMAKECMD} ${VPM_PKGDESTCMD}=${VPM_BUILDIR}/${VPM_PKGDESTDIR##${VPM_BUILDIR}} ${VPM_PKGDESTGT}"
+	fi
+
+	return 0
+}
+
+set-destroot()
+{
+	local INPUT="${@%/data}"
+	
+	if [ -z "${INPUT}" ]
+	then
+		printme -f "warn" msg_mis_args -l "${FUNCNAME}"
+	else
+		if [ -n "$(command -V ${VPM_CUR_FUNCTION} | grep -Eo "(^|[[:space:]])set\-destdir[[:space:]].*")" ]
+		then
+			printme -f warn msg_forb_use -l "${FUNCNAME}" "set-destdir"
+		else
+			VPM_PKGDESTDIR="$(trim_slashes "${VPM_BUILDIR}/${INPUT##${VPM_BUILDIR}}-root")"
+			readonly R="${VPM_PKGDESTDIR}"
+			VPM_PKGINSTCMD="${VPM_PKGMAKECMD} ${VPM_PKGDESTCMD}=${VPM_PKGDESTDIR} ${VPM_PKGDESTGT}"
+		fi
+	fi
+
+	return 0
+}
+
+set-destdir()
+{
+	local INPUT="${@%/data}/data"
+	
+	if [ "x${INPUT}" == "x" ]
+	then
+		printme -f "warn" msg_mis_args -l "${FUNCNAME}"
+	else
+		if [ -n "$(command -V ${VPM_CUR_FUNCTION} | grep -Eo "(^|[[:space:]])set\-destroot[[:space:]].*")" ]
+		then
+			printme -f warn msg_forb_use -l "${FUNCNAME}" "set-destroot"
+		else
+			VPM_PKGDESTDIR="$(trim_slashes "${VPM_BUILDIR}/${INPUT##${VPM_BUILDIR}}-root")"
+			VPM_PKGINSTCMD="${VPM_PKGMAKECMD} ${VPM_PKGDESTCMD}=${VPM_PKGDESTDIR} ${VPM_PKGDESTGT}"
+		fi
+	fi
+
+	return 0
+}
+
+set-destcmd()
+{
+	local INPUT="${*}"
+	
+	if [ "x${INPUT}" == "x" ]
+	then
+		printme -f "warn" msg_mis_args -l "${FUNCNAME}"
+	else
+		VPM_PKGDESTCMD="${INPUT}"
+		VPM_PKGINSTCMD="${VPM_PKGMAKECMD} ${VPM_PKGDESTCMD}=${VPM_PKGDESTDIR} ${VPM_PKGDESTGT}"
+	fi
+
+	return 0
+}
+
+set-destgt()
+{
+	local INPUT="${*}"
+	
+	if [ "x${INPUT}" == "x" ]
+	then
+		printme -f "warn" msg_mis_args -l "${FUNCNAME}"
+	else
+		VPM_PKGDESTGT="${INPUT}"
+		VPM_PKGINSTCMD="${VPM_PKGMAKECMD} ${VPM_PKGDESTCMD}=${VPM_PKGDESTDIR} ${VPM_PKGDESTGT}"
+	fi
+
+	return 0
+}
+
+set-inscmd()
+{
+	local INPUT="${*}"
+	
+	if [ "x${INPUT}" == "x" ]
+	then
+		printme -f "warn" msg_mis_args -l "${FUNCNAME}"
+	else
+		VPM_PKGINSTCMD="${INPUT}"
+	fi
+
+	return 0
+}
+
+set-makecmd()
+{
+	local INPUT="${*}"
+	
+	if [ "x${INPUT}" == "x" ]
+	then
+		printme -f "warn" msg_mis_args -l "${FUNCNAME}"
+	else
+		VPM_PKGMAKECMD="${INPUT}"
+	fi
+
+	return 0
+}
+
+add-patches()
+{
+	local X Y FOUND
+	
+	if [ -z "${@}" ]
+	then
+		printme -f "warn" msg_mis_args -l "${FUNCNAME}"
+		return 0
+	fi
+	
+	for X in ${@}
+	do
+		FOUND="0"
+		for Y in ${VPM_PKGPATCHES}
+		do
+			if [ "$(trim ${X})" == "$(trim ${Y})" ]
+			then
+				FOUND="1"
+				break
+			fi
+		done
+		
+		if [ "${FOUND}" == "0" ]
+		then
+			printme -f "log" -l "${FUNCNAME}" "$(gettext 'Adding %s patch to list')" "${X}"
+			VPM_PKGPATCHES="${VPM_PKGPATCHES} ${X}"
+		fi
+	done
+	
+	return 0
+}
+
+prep-patches()
+{
+	local X Y FOUND
+	
+	if [ -z "${@}" ]
+	then
+		printme -f "warn" msg_mis_args -l "${FUNCNAME}"
+		return 0
+	fi
+	
+	for X in ${@}
+	do
+		FOUND="0"
+		for Y in ${VPM_PKGPATCHES}
+		do
+			if [ "$(trim ${X})" == "$(trim ${Y})" ]
+			then
+				FOUND="1"
+				break
+			fi
+		done
+		
+		if [ "${FOUND}" == "0" ]
+		then
+			printme -f "log" -l "${FUNCNAME}" "$(gettext 'Preppending %s patch to list')" "${X}"
+			VPM_PKGPATCHES="${X} ${VPM_PKGPATCHES}"
+		fi
+	done
+	
+	return 0
+}
+
+add-sources()
+{
+	local X Y FOUND
+	
+	if [ -z "${@}" ]
+	then
+		printme -f "warn" msg_mis_args -l "${FUNCNAME}"
+		return 0
+	fi
+	
+	for X in ${@}
+	do		
+		FOUND="0"
+		for Y in ${VPM_PKGSOURCES}
+		do			
+			if [ "$(trim ${X})" == "$(trim ${Y})" ]
+			then
+				FOUND="1"
+				break
+			fi
+		done
+		
+		if [ "${FOUND}" == "0" ]
+		then
+			printme -f "log" -l "${FUNCNAME}" "$(gettext 'Adding %s sources')" "${X##*/}"
+			VPM_PKGSOURCES="${VPM_PKGSOURCES} ${X}"
+		fi
+	done
+	
+	return 0
+}
+
+prep-sources()
+{
+	local X Y FOUND
+	
+	if [ -z "${@}" ]
+	then
+		printme -f "warn" msg_mis_args -l "${FUNCNAME}"
+		return 0
+	fi
+	
+	for X in ${@}
+	do		
+		FOUND="0"
+		for Y in ${VPM_PKGSOURCES}
+		do			
+			if [ "$(trim ${X})" == "$(trim ${Y})" ]
+			then
+				FOUND="1"
+				break
+			fi
+		done
+		
+		if [ "${FOUND}" == "0" ]
+		then
+			printme -f "log" -l "${FUNCNAME}" "$(gettext 'Prepending %s sources')" "${X##*/}"
+			VPM_PKGSOURCES="${X} ${VPM_PKGSOURCES}"
+		fi
+	done
+	
+	return 0
+}
+
+add-sections()
+{
+	if [ -z "${@}" ]
+	then
+		printme -f "warn" msg_mis_args -l "${FUNCNAME}"
+		return 0
+	fi
+	
+	VPM_PKGSECTIONS="${VPM_PKGSECTIONS} ${@}"
+	
+	return 0
+}
+
+add-rundeps()
+{
+	if [ -z "${@}" ]
+	then
+		printme -f "warn" msg_mis_args -l "${FUNCNAME}"
+		return 0
+	fi
+	
+	VPM_PKGRUNDEPS="${VPM_PKGRUNDEPS} ${@}"
+	
+	return 0
+}
+
+add-buildeps()
+{	
+	if [ -z "${@}" ]
+	then
+		printme -f "warn" msg_mis_args -l "${FUNCNAME}"
+		return 0
+	fi
+	
+	VPM_PKGBUILDEPS="${VPM_PKGBUILDEPS} ${@}"
+	
+	return 0
+}
+
+add-optdeps()
+{
+	if [ -z "${@}" ]
+	then
+		printme -f "warn" msg_mis_args -l "${FUNCNAME}"
+		return 0
+	fi
+	
+	VPM_PKGOPTDEPS="${VPM_PKGOPTDEPS} ${@}"
+	
+	return 0
+}
+
+add-shlibdeps()
+{
+	if [ -z "${@}" ]
+	then
+		printme -f "warn" msg_mis_args -l "${FUNCNAME}"
+		return 0
+	fi
+	
+	VPM_PKGSHLIBDEPS="${VPM_PKGSHLIBDEPS} ${@}"
+	
+	return 0
+}
+
+add-conflicts()
+{
+	if [ -z "${@}" ]
+	then
+		printme -f "warn" msg_mis_args -l "${FUNCNAME}"
+		return 0
+	fi
+	
+	VPM_PKGCONFLICTS="${VPM_PKGCONFLICTS} ${@}"
+	
+	return 0
+}
+
+add-blacklist()
+{
+	if [ -z "${@}" ]
+	then
+		printme -f "warn" msg_mis_args -l "${FUNCNAME}"
+		return 0
+	fi
+	
+	VPM_PKGBLACKLIST="${VPM_PKGBLACKLIST} ${@}"
+	
+	return 0
+}
+
+add-subpkgs()
+{
+	if [ -z "${@}" ]
+	then
+		printme -f "warn" msg_mis_args -l "${FUNCNAME}"
+		return 0
+	fi
+	
+	VPM_PKGSUBPKGS="${VPM_PKGSUBPKGS} ${@}"
+	
+	return 0
+}
+
+prep-subpkgs()
+{
+	if [ -z "${@}" ]
+	then
+		printme -f "warn" msg_mis_args -l "${FUNCNAME}"
+		return 0
+	fi
+	
+	VPM_PKGSUBPKGS="${@} ${VPM_PKGSUBPKGS}"
+	
+	return 0
+}
+
+set-useragent()
+{
+	if [ -z "${@}" ]
+	then
+		printme -f "warn" msg_mis_args -l "${FUNCNAME}"
+		return 0
+	fi
+	
+	VPM_PKGUSERAGENT="${@}"
+	
+	return 0	
+}
+
+add-xcmd()
+{	if [ -z "${@}" ]
+	then
+		printme -f "warn" msg_mis_args -l "${FUNCNAME}"
+		return 0
+	fi
+	
+	VPM_ADD_XCMD="${@}"
+	
+	return 0
+}
+
+set-xcmd()
+{	if [ -z "${@}" ]
+	then
+		printme -f "warn" msg_mis_args -l "${FUNCNAME}"
+		return 0
+	fi
+	
+	VPM_SET_XCMD="${@}"
+	
+	return 0
+}

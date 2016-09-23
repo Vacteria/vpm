@@ -1,0 +1,451 @@
+#!/bin/bash
+
+update_libs()
+{
+	local L LDCMD
+
+	for L in /sbin/ldconfig /toolchain/sbin/ldconfig
+	do
+		if [ -n $(chroot "command -v ${L}" 2>/dev/null) ]
+		then
+			LDCMD="${L}"
+			break
+		fi
+	done
+
+	if [ ! -f "${AND_ROOT}/etc/ld.so.conf" ]
+	then	
+		mkdir -p ${AND_ROOT}/etc
+		touch ${AND_ROOT}/etc/ld.so.conf
+	fi
+
+	if [ -n "${LDCMD}" ]
+	then
+		msg "$(gettext 'Updating sared libraries')"
+		chroot "${LDCMD}" || return 1
+	fi
+
+	return 0
+}
+
+update_man_db()
+{
+	local L MANDB
+
+	for L in mandb man
+	do
+		if [ -n "$(chroot "command -v ${L}" 2>/dev/null)" ]
+		then
+			MANDB="${L}"
+			break
+		fi
+	done
+
+	if [[ -n "${MANDB}" && "${MANDB##*/}" == "mandb" ]]
+	then
+		msg "$(gettext 'Updating man database')"
+		${MANDB} -uq || return 1
+	fi
+	
+	return 0
+}
+
+update_info_pages()
+{
+	local INSTALLINFO="$(chroot 'command -v install-info' 2>/dev/null)"
+	local INFODIR="/usr/share/info"
+
+	if [ -n "${INSTALLINFO}" ]
+	then
+		msg "$(gettext 'Updating info data base')"
+
+		if [ ${ONLY_INSTALL} ]
+		then
+			chroot "${INSTALLINFO} --quiet --info-dir=${INFODIR} "${VPM_INFO}""
+		elif [ ${ONLY_REMOVE} ]
+		then
+			chroot "${INSTALLINFO} --quiet --delete --info-dir=${INFODIR} "${VPM_INFO}"" 2>/dev/null
+		fi
+	fi
+
+	return 0
+}
+
+update_desktop()
+{
+	local DBCACHE APPDIR
+
+	DBCACHE="$(chroot 'command -v update-desktop-database' 2>/dev/null)"
+	APPDIR="/usr/share/applications"
+	
+	if [[ -n "${DBCACHE}" && -d "${AND_ROOT}/${APPDIR}" ]]
+	then
+		msg "$(gettext 'Updating desktop database')"
+		chroot "${DBCACHE}" &>/dev/null || return 1
+	fi
+
+	return 0
+}
+
+update_icon_cache()
+{
+	local ICONCACHE ICONRES DIR
+
+	ICONCACHE="$(chroot 'command -v gtk-update-icon-cache' 2>/dev/null)"
+	ICONRES="$(chroot 'command -v xdg-icon-resource' 2>/dev/null)"
+
+	if [ -n "${ICONCACHE}" ]; then
+		for DIR in ${VPM_ICONS}
+		do
+			if [[ -d ${AND_ROOT}/${DIR}  &&  -f ${AND_ROOT}/${DIR}/index.theme ]]
+			then
+				msg "$(gettext 'Updating icon themes')"
+				chroot "${ICONCACHE} -f /${DIR} >/dev/null 2>&1" || return 1
+				if [ -n "${ICONRES}" ]
+				then
+					chroot "xdg-icon-resource forceupdate --theme ${DIR##*/} >/dev/null 2>&1" || return 1
+				fi
+			fi
+		done
+	fi
+
+	return 0
+}
+
+update_gdk_modules()
+{
+	local GDKLOADER="$(chroot 'command -v gdk-pixbuf-query-loaders' 2>/dev/null)"
+
+	if [ -n "${GDKLOADER}" ]
+	then
+		msg "$(gettext 'Updating GDK modules')"
+		chroot "${GDKLOADER} --update-cache" || return 1
+	fi
+
+	return 0
+}
+
+update_gtk_modules()
+{
+	local GTKQUERY="$(chroot 'command -v gtk-query-immodules-2.0' 2>/dev/null)"
+
+	if [ -n "${GTKQUERY}" ]
+	then
+		msg "$(gettext 'Updating GTK loaders')"
+		chroot "${GTKQUERY} > /etc/gtk-2.0/gtk.immodules" || return 1
+	fi
+
+	return 0
+}
+
+
+update_gconf_schemas()
+{
+	local GCONFTOOL="$(chroot 'command -v gconftool-2' 2>/dev/null)"
+	local PROCESS="0"
+	local V F E
+
+	if [ -n "${GCONFTOOL}" ]
+	then
+		for V in ${ONLY_INSTALL} ${AND_INSTALL} ${ONLY_CONFIG}
+		do
+			if [ "${V}" == "1" ]
+			then
+				PROCESS="1"
+				break
+			fi
+		done
+
+		if [ "${PROCESS}" == "1" ]
+		then
+			if [ -n "${VPM_SCHEMAS}" ]
+			then
+				msg "$(gettext 'Installing gconf2 schemas')"
+
+				local F=""
+				for F in ${VPM_SCHEMAS}
+				do
+					if [ -f "${AND_ROOT}/${F}" ]
+					then
+						msg "$(gettext 'Installing %s')" "${F##*/}"
+						chroot "GCONF_CONFIG_SOURCE=$(${GCONFTOOL} --get-default-source) ${GCONFTOOL} --makefile-install-rule /${F}" &>/dev/null || return 1
+					fi
+				done
+			fi
+				
+			if [ -n "${VPM_ENTRIES}" ]
+			then
+				local E=""
+				for E in ${VPM_ENTRIES}
+				do
+					if [ -f "${AND_ROOT}/${E}" ]
+					then
+						msg "$(gettext 'Loading %s')" "${E##*/}"
+						chroot "GCONF_CONFIG_SOURCE=$(${GCONFTOOL} --get-default-source) ${GCONFTOOL} --config-source=$(${GCONFTOOL} --get-default-source) --direct --load /${E}" &>/dev/null || return 1
+					fi
+				done
+			fi
+		else
+			if [ "${ONLY_REMOVE}" == "1" ]
+			then
+				if [ -n "${VPM_SCHEMAS}" ]
+				then
+					msg "$(gettext 'Uninstalling gconf schemas')"
+					local F=""
+					for F in ${VPM_SCHEMAS}
+					do
+						if [ -f "$(trim_slashes ${AND_ROOT}/${F})" ]
+						then
+							msg "$(gettext 'Uninstalling %s')" "${F##*/}"
+							chroot "GCONF_CONFIG_SOURCE=$(${GCONFTOOL} --get-default-source) ${GCONFTOOL} --makefile-uninstall-rule /${F}" &>/dev/null || return 1
+						fi
+					done
+				fi
+
+				if [ -n "${VPM_ENTRIES}" ]
+				then
+					local E=""
+					for E in ${VPM_ENTRIES}
+					do
+						if [ -f "${AND_ROOT}/${E}" ]
+						then
+							debug "$(gettext 'Unloading %s')" "${E##*/}"
+							chroot "GCONF_CONFIG_SOURCE=$(${GCONFTOOL} --get-default-source) ${GCONFTOOL} --config-source=$(${GCONFTOOL} --get-default-source) --direct --unload /${E}" &>/dev/null || return 1
+						fi
+					done
+				fi
+			fi
+		fi	
+		[[ -n "${VPM_SCHEMAS}" || -n "${VPM_ENTRIES}" ]] && kill -HUP $(pidof gconfd-2)
+	fi
+
+	return 0
+}
+
+update_dconf_schemas()
+{
+	local DIR
+	local GCOMPILER="$(chroot 'command -v glib-compile-schemas' 2>/dev/null)"
+	local DCONFDIRS="/usr/share/glib-2.0/schemas /usr/local/share/glib-2.0/schemas"
+
+	if [ -n "${GCOMPILER}" ]
+	then
+		msg "$(gettext 'Rebuilding xml dconf schemas')"
+		local DIR=""
+		for DIR in  ${DCONFDIRS}
+		do
+			if [ -d ${AND_ROOT}/${DIR} ]
+			then
+				chroot "${GCOMPILER} ${DIR} &>/dev/null" || return 1
+			fi
+		done
+	fi
+
+	return 0
+}
+
+update_gio_modules()
+{
+	local GIOQUERY="$(chroot -v 'command -v gio-querymodules' 2>/dev/null)"
+	local GIODIR="/usr/lib/gio/modules"
+	
+	if [[ -n "${GIOQUERY}" && -d "${AND_ROOT}/${GIODIR}" ]]
+	then
+		msg "$(gettext 'Updating GIO modules')"
+		chroot "${GIOQUERY} ${GIODIR}" || return 1
+	fi
+
+	return 0
+}
+
+update_kernel_modules()
+{
+	local DEPMOD="$(chroot 'command -v depmod' 2>/dev/null)"
+
+	if [ -n "${DEPMOD}" ]
+	then
+		if [ -d "${AND_ROOT}/lib/modules/${VPM_KO}" ]
+		then
+			msg "$(gettext 'Updating modules ${VPM_KO}')"
+			chroot "${DEPMOD} ${VPM_KO} &" || return 1
+		fi
+	fi
+
+	return 0
+}
+
+update_mime()
+{
+	local MIMECACHE MIMEDIR
+	
+	MIMECACHE="$(chroot 'command -v update-mime-database' 2>/dev/null)"
+	MIMEDIR="/usr/share/mime"
+	
+	if [[ -n "${MIMECACHE}" && -d "${AND_ROOT}/${MIMEDIR}" ]]
+	then
+		msg "$(gettext 'Updating mime types')"
+		chroot "${MIMECACHE} ${MIMEDIR} &" || return 1
+	fi
+
+	return 0
+}
+
+setup_initscripts()
+{
+	local B=""
+	rchroot insserv -h &>/dev/null || return 0
+
+	for B in ${VPM_INIT}
+	do
+		msg "$(gettext 'Setting up %s initscript')" "${B##*/}"
+		chroot "insserv -f ${B##*/}"	
+	done
+
+	return 0
+}
+
+setup_xfonts()
+{	
+	local MKFONTDIR MKFONTSCALE D
+
+	if [ "${ONLY_REMOVE}" == "1" ]
+	then
+		for D in ${VPM_XFONTS}
+		do
+			if [ -d ${AND_ROOT}/${D} ]
+			then
+				debug "$(gettext 'Deleting fontdir %s')" "${D##*/}"
+				chroot "( cd /${D} ; rm -f fonts.* 2>/dev/null )"
+				chroot "rmdir --ignore-fail-on-non-empty /${D}"
+			fi
+		done
+	else
+		MKFONTDIR="$(chroot 'command -v mkfontdir')"
+		MKFONTSCALE="$(chroot 'command -v mkfontscale')"
+		FCCACHE="$(chroot 'command -v fc-cache')"
+
+		[[ -z "${MKFONTDIR}" || -z "${MKFONTSCALE}" ]] && return 0
+
+		for D in ${VPM_XFONTS}
+		do
+			if [ -d ${AND_ROOT}/${D} ]
+			then
+				debug "$(gettext 'Setting fontdir %s')" "${D##*/}"
+				chroot "( cd /${D} ; ${MKFONTDIR} . ; ${MKFONTSCALE} .)"
+			fi
+		done
+
+		[ -n "${FCCACHE}" ] && ${FCCACHE} -f -s > /dev/null
+	fi	
+}
+
+shot_triggers()
+{
+	local DB ID TR TR_FOUND FILE
+	
+	INPUT="${1}"
+	TR_FOUND="0"
+
+	view_triggers "${INPUT}"
+
+	for TR in X${VPM_DYNAMIC} X${VPM_INFO} X${VPM_MAN} X${VPM_DESKTOP} X${VPM_ICONS} \
+		X${VPM_SCHEMAS} X${VPM_ENTRIES} X${VPM_DCONF} X${VPM_GIO} X${VPM_GDK} X${VPM_GTK} \
+		X${VPM_KO} X${VPM_INIT} X${VPM_XFONTS}
+	do
+		if [ "${TR}" != "X" ] 
+		then
+			TR_FOUND="1"
+			break
+		fi
+	done
+
+	if [ "${TR_FOUND}" == "1" ]
+	then
+		msg "$(gettext 'Running package triggers')"
+	else
+		debug "$(gettext 'No triggers found')"
+	fi
+
+	[ -n "${VPM_DYNAMIC}" ] && update_libs
+	[ -n "${VPM_INFO}" ] && update_info_pages
+	[ -n "${VPM_MAN}" ] && update_man_db
+	[ -n "${VPM_DESKTOP}" ] && update_desktop
+	[ -n "${VPM_ICONS}" ] && update_icon_cache
+	if [ "${ONLY_REMOVE}" != "1" ]
+	then
+		[[ -n "${VPM_SCHEMAS}" || -n "${VPM_ENTRIES}" ]] && update_gconf_schemas
+	fi
+	[ -n "${VPM_DCONF}" ] && update_dconf_schemas
+	[ -n "${VPM_GIO}" ] && update_gio_modules
+	[ -n "${VPM_GDK}" ] && update_gdk_modules
+	[ -n "${VPM_GTK}" ] && update_gtk_modules
+	[ -n "${VPM_KO}" ] && update_kernel_modules
+	[[ "${ONLY_CONFIG}" == "1" && "${AND_INITRC}" == "1" && -n "${VPM_INIT}" ]] && setup_initscripts
+	[ -n "${VPM_XFONTS}" ] && setup_xfonts
+
+	update_mime
+
+	return 0
+}
+
+config_packages()
+{
+	local P VPM_NAME VPM_ID VPM_PKG_NAME VPM_SETUP_FILE NOSHELL
+	
+	case "$(only_lower ${1})" in
+		a|all)
+			if ! rchroot /bin/bash --version  &>/dev/null
+			then
+				die "$(gettext 'Unable to find any usable bash shell in %s directory')" "${AND_ROOT}"
+			fi
+
+			if ! rchroot /usr/bin/vpm --help &>/dev/null
+			then
+				die "$(gettext 'unable to find vpm program in %s directory')" "${AND_ROOT}"
+			fi
+			
+			for P in $(awk -F'|' '{print $2}' ${VPM_DATABASE})
+			do
+				rchroot /usr/bin/vpm --config ${P}
+			done
+			
+			return 0
+		;;
+	esac
+	 
+	for P in ${@}
+	do
+		if ! find_exactly ${P}
+		then
+			VPM_NAME="${Q_LINE[0]}"
+			VPM_PKG_NAME="${Q_LINE[0]}-${Q_LINE[1]}-${Q_LINE[2]}"
+			VPM_SETUP="$(trim_slashes ${AND_ROOT}/${VPM_BASE}/setup/${VPM_PKG_NAME})"
+
+			msg "$(gettext 'Setting up %s package')" "${VPM_PKG_NAME}"
+			shot_triggers "${VPM_PKG_NAME}"
+
+			if [ -f "${VPM_SETUP}" ]
+			then
+				chmod 744 ${VPM_SETUP}
+				unset -f exec_config set_perms
+				. ${VPM_SETUP}
+
+				if commander set_perms
+				then
+					printme -f "msg" msg_running_func "set_perms"
+					chroot "${VPM_SETUP##${AND_ROOT}} setperm"
+				fi
+				
+				if commander exec_config
+				then
+					printme -f "msg" msg_running_func "exec_config"
+					chroot "${VPM_SETUP##${AND_ROOT}} config"
+				fi
+			fi
+		else
+			printme -f "die" msg_not_installed "${P}"
+		fi
+	done
+	
+	return 0
+}

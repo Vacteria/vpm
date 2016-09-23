@@ -1,0 +1,142 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR THE PACKAGE'S COPYRIGHT HOLDER
+# This file is distributed under the same license as the PACKAGE package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: PACKAGE VERSION\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2012-12-24 00:03-0600\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"Language: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=CHARSET\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+#: bash/vpmget/install:116
+msgid "No mirros enabled"
+msgstr ""
+
+#: bash/vpmget/install:127
+msgid "The next packages not found on repos"
+msgstr ""
+
+#: bash/vpmget/install:140
+msgid "The next packages will be installed :\\n"
+msgstr ""
+
+#: bash/vpmget/install:142
+msgid "\\nDo you want to continue ? [y|n]"
+msgstr ""
+
+#: bash/vpmget/install:154
+msgid "Nothing to do"
+msgstr ""
+
+#: bash/vpmget/install:172
+msgid "Downloading %s ..."
+msgstr ""
+
+#: bash/vpmget/install:183
+msgid "Testing md5 packages"
+msgstr ""
+
+#: bash/vpmget/install:191
+msgid "Processing %s package"
+msgstr ""
+
+#: bash/vpmget/install:194
+msgid "%s sumatory file does not match"
+msgstr ""
+
+#: bash/vpmget/messages:5
+msgid ""
+"Usage : \n"
+" %s [options] [buildir]\n"
+" \n"
+"Options :\n"
+" -n,--new\n"
+" -u,--update\n"
+" -p,--patch\n"
+" -c,--clean\n"
+" -b,--build\n"
+" -U,--user\n"
+" -a,--asroot\n"
+" -t,--template\n"
+" -f,--force\n"
+" -h,--help\n"
+" --nobuildeps\n"
+" "
+msgstr ""
+
+#: bash/vpmget/messages:31
+msgid "Failed to download %s"
+msgstr ""
+
+#: bash/vpmget/messages:54
+msgid "Invalid \"%s\" function"
+msgstr ""
+
+#: bash/vpmget/messages:60
+msgid "Running %s() function"
+msgstr ""
+
+#: bash/vpmget/messages:61
+msgid "Missing arguments"
+msgstr ""
+
+#: bash/vpmget/messages:62
+msgid "Too many arguments"
+msgstr ""
+
+#: bash/vpmget/messages:63
+msgid "Downloading"
+msgstr ""
+
+#: bash/vpmget/messages:64
+msgid "Missing %s file"
+msgstr ""
+
+#: bash/vpmget/messages:65
+msgid "Missing %s directory"
+msgstr ""
+
+#: bash/vpmget/messages:66
+msgid "Failed to load \"%s\" file"
+msgstr ""
+
+#: bash/vpmget/messages:67
+msgid "Incompatible %s arch for %s systems"
+msgstr ""
+
+#: bash/vpmget/messages:68
+msgid "No directory to back found"
+msgstr ""
+
+#: bash/vpmget/messages:69
+msgid "Failed to extract \"%s\" file"
+msgstr ""
+
+#: bash/vpmget/messages:70
+msgid "%s file is damaged, stopping here"
+msgstr ""
+
+#: bash/vpmget/messages:71
+msgid "Aborting process .."
+msgstr ""
+
+#: bash/vpmget/update:22
+msgid "Updating mirrors"
+msgstr ""
+
+#: bash/vpmget/update:36
+msgid "Failed to retrive any database from %s"
+msgstr ""
+
+#: bash/vpmget/update:44
+msgid "Failed to retrive %s.tar.gz from %s"
+msgstr ""

@@ -1,0 +1,194 @@
+#!/bin/bash
+
+read_db_dates()
+{
+	local INPUT LINE KEY VAL H
+	
+	INPUT="${1}"
+	[ -z "${INPUT}" ] && return 1
+
+	declare -A INDEX
+	while read LINE
+	do
+			case ${LINE} in
+					CONTENT*) break ;;
+					*       )
+							KEY="$(trim ${LINE%:*})"
+							VAL="$(trim ${LINE#*:})"
+					;;
+			esac
+
+			if [[ -n "${KEY}" && -n "${VAL}" ]]
+			then
+					INDEX[${KEY}]+="${VAL}"
+			fi
+
+	done < ${INPUT}
+
+	DB_VPM_CONTROL="${INPUT}"
+	DB_VPM_NAME="${INDEX[NAME]}"
+	DB_VPM_VERSION="${INDEX[VERSION]}"
+	DB_VPM_PKGARCH="${INDEX[PKGARCH]}"
+	DB_VPM_FULL_NAME="${DB_VPM_NAME}-${DB_VPM_VERSION}-${DB_VPM_PKGARCH}"
+	DB_VPM_SECTIONS="${INDEX[SECTIONS]}"
+	DB_VPM_LICENSE="${INDEX[LICENSE]}"
+	DB_VPM_BUILDEPS="${INDEX[BUILDEPS]}"
+	DB_VPM_RUNDEPS="${INDEX[RUNDEPS]}"
+	DB_VPM_OPTDEPS="${INDEX[OPTDEPS]}"
+	DB_VPM_CONFLICTS="${INDEX[CONFLICTS]}"
+	DB_VPM_PKGTYPE="${INDEX[PKGTYPE]}"
+	DB_VPM_HOLDON="${INDEX[HOLDON]}"
+	
+	DB_VPM_HOLDON="${DB_VPM_HOLDON:-none}"
+	DB_VPM_PKGTYPE="${DB_VPM_PKGTYPE:-pkg}"
+
+	DB_VPM_SECTIONS="$(only_uniq ${DB_VPM_SECTIONS})"
+	DB_VPM_RUNDEPS="$(only_uniq ${DB_VPM_RUNDEPS})"
+	DB_VPM_CONFLICTS="$(only_uniq ${DB_VPM_CONFLICTS})"
+	DB_VPM_HOLDON="$(only_uniq ${DB_VPM_HOLDON})"
+
+	for H in ${DB_VPM_HOLDON}
+	do
+		case "${H}" in
+			none|all) DB_VPM_PKG_HOLDON="${H}" ; break ;;
+			install|remove|upgrade|config) DB_VPM_PKG_HOLDON+=" ${H}" ;;
+		esac
+	done
+
+	DB_VPM_BUILDIR="${INDEX[BUILDIR]}"
+	DB_VPM_CHECKSUM="${INDEX[CHECKSUM]}"
+	
+	return 0
+}
+
+read_pkg_dates()
+{
+	local INPUT FIELD COUNT NCOUNT LAST NAME
+
+	INPUT=${1}
+	[ -z "${INPUT}" ] && return 0
+
+	VPM_PKG_FILE="${INPUT##*/}"
+	FIELDS=(${VPM_PKG_FILE//-/ })
+	COUNT=${#FIELDS[@]}
+	NCOUNT=$((${COUNT} - 2))
+	LAST=(${FIELDS[-1]/./ })
+
+	VPM_PKG_EXT="${LAST[-1]}"
+	VPM_PKGARCH="${LAST[-2]}"
+	VPM_PKG_VERSION="${FIELDS[-2]}"
+	NAME="${FIELDS[@]:0:${NCOUNT}}"
+	VPM_PKG_NAME="${NAME// /-}"
+	VPM_PKG_NO_EXT="${VPM_PKG_NAME}-${VPM_PKG_VERSION}-${VPM_PKGARCH}"
+	
+	return 0
+}
+
+find_exactly()
+{
+	local INPUT G_NAME VALUE Q_NAME Q_VERSION Q_ARCH Q_STATE
+
+	case ${1} in
+		--novar|-n )
+			local Q_LINE
+			shift 1
+		;;
+		* )
+			unset Q_LINE
+		;;
+	esac
+
+	INPUT="${1}"
+	G_NAME="${INPUT//-[[:digit:]]*}"
+	
+	VALUE="$(vpmqdb -sf ${VPM_DATABASE} ${G_NAME} 2>/dev/null)"
+	if [ -n "${VALUE}" ]
+	then
+		Q_LINE=(${VALUE//|/ })
+		Q_NAME="${Q_LINE[0]}"
+		Q_VERSION="${Q_LINE[1]}"
+		Q_ARCH="${Q_LINE[2]}"
+		Q_STATE="${Q_LINE[3]}"
+
+		return 1
+	fi
+
+	return 0
+}
+
+generate_fmt_list()
+{
+	vpmqdb -lf ${VPM_DATABASE} | gawk -F'|' '{print $1"-"$2"-"$3}'
+	return ${PIPESTATUS[0]}
+}
+
+insert_into_database()
+{
+	vpmqdb -if ${VPM_DATABASE} "${DB_VPM_NAME}" "${DB_VPM_VERSION}|${DB_VPM_PKGARCH}|1"
+	return $?
+}
+
+view_package()
+{
+	if ! find_exactly ${1}
+	then
+		cat <<EOF
+${Q_LINE[0]}-${Q_LINE[1]}-${Q_LINE[2]}
+EOF
+	fi
+
+	return 0
+}
+
+view_content()
+{
+	local INPUT MYFILE MYDB
+
+	INPUT="${1}"
+	MYFILE=$(view_package ${INPUT})
+	MYDB="${VPM_PKG_FILES}/${MYFILE}"
+
+	if [[ -n "${MYFILE}" && -f "${MYDB}" ]]
+	then
+		read_control_field ${MYDB} CONTENT 
+	fi
+
+	return 0
+}
+
+view_triggers()
+{
+	local INPUT C_ARRAY
+
+	INPUT="${1}"
+
+	msg "$(gettext 'Searching package triggers')"
+	C_ARRAY=( $(view_content ${INPUT}) )
+
+	print_c_array() { printf '%s\n' ${C_ARRAY[@]}; }
+
+	VPM_DYNAMIC="$(print_c_array | sed -e "s#.*/##g" | grep -E ".*\.so.*")"
+	VPM_INFO="$(print_c_array | egrep '((^|/)usr/share/info|(^|/)usr/local/share/info).*(.gz|.xz|.info)')"
+	VPM_MAN="$(print_c_array | egrep '(^|/)usr/(local/share|share)/man/man.*/.*\.(xz|gz|[[:digit:]])')"
+	VPM_DESKTOP="$(print_c_array | sed -e "s#.*/##g" | grep -E '.*\.desktop')"
+	VPM_ICONS="$(print_c_array | egrep '((^|/)usr/share/icons/).*(.png)' | sed -e "s#[[:digit:]].*x[[:digit:]].*/##g" -e 's,[^/]*$,,' | uniq)"
+	VPM_SCHEMAS="$(print_c_array | egrep '(^|/)usr/share/gconf/.*\.schemas')"
+	VPM_ENTRIES="$(print_c_array | egrep '(^|/)etc/gconf/.*\.entries')"
+	VPM_DCONF="$(print_c_array | egrep '(^|/)usr/share/glib-2.0/schemas/.*\.xml')"
+	VPM_GIO="$(print_c_array | egrep '(^|/)usr/lib/gio/modules.*\.so')"
+	VPM_GDK="$(print_c_array | egrep '(^|/)usr/lib/gdk-pixbuf-2.*/2.*/.*\.so')"
+	VPM_GTK="$(print_c_array | egrep '(^|/)usr/lib/gtk-2.*/2.*/inmodules/.*\.so')"
+	VPM_KO="$(print_c_array | egrep '(^|/)lib/modules/.*/.*(.ko|.gz|.xz)' | awk -F/ '{print $3}' | uniq)"
+	VPM_INIT="$(print_c_array | egrep '(^|/)etc/rc.d/*' | egrep -v "(^|/)etc/rc.d($|/rc$)")"
+	VPM_XFONTS="$(print_c_array | egrep '(^|/)usr/share/fonts/.*/.*(.ttf|otf|pcf|.gz)' | sed -e 's,[^/]*$,,' | uniq)"
+
+	return 0
+}
+
+delete_all_matches()
+{
+	INPUT=${1}
+	vpmqdb -dqf ${VPM_DATABASE} ${INPUT}
+	return $?
+}
+

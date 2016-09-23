@@ -1,0 +1,43 @@
+#!/bin/bash
+
+extract_mirror()
+{
+	local STATUS
+	
+	tar -C ${1%/*} -xf ${1}
+	STATUS=$?
+	
+	rm -f ${1}
+
+	return ${STATUS}
+}
+
+path_to_url()
+{
+	printf "${1}" | sed -e "s#:#_#g" -e "s#/#__#g"
+}
+
+parse_mirrors()
+{
+	RAW_LIST=( $(grep -Esv '^(#|$)' ${AND_MIRRORS}) )
+	(( ${#RAW_LIST[@]} == 0 )) && return 1
+	
+	return 0
+}
+
+get_pkgarch()
+{
+	local PKGARCH
+	
+	case $(uname -m) in
+		i?86|athlon ) PKGARCH="x32" ;;
+		amd*|x86_64 ) PKGARCH="x64" ;;
+	esac
+	
+	printf '%s' ${PKGARCH}
+}
+
+absolute_path()
+{
+	readlink -f ${1}
+}

@@ -1,0 +1,658 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR THE PACKAGE'S COPYRIGHT HOLDER
+# This file is distributed under the same license as the PACKAGE package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: PACKAGE VERSION\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2012-12-24 00:03-0600\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"Language: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=CHARSET\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+#: bash/vpmbuild.in:136
+msgid "Only one main action at the same time"
+msgstr ""
+
+#: bash/vpmbuild.in:259
+msgid "### Building %s package with %s params"
+msgstr ""
+
+#: bash/vpmbuild.in:262
+msgid "Failed to build %s package. Please check your buildlog"
+msgstr ""
+
+#: bash/vpmbuild.in:265
+msgid "%s package sucefull build ###\\n"
+msgstr ""
+
+#: bash/vpmbuild.in:292
+msgid "Running build process on %s"
+msgstr ""
+
+#: bash/vpmbuild.in:304
+msgid "Testing buildir on %s"
+msgstr ""
+
+#: bash/vpmbuild/messages:5
+msgid ""
+"Usage : \n"
+" %s [options] [buildir]\n"
+" \n"
+"Options :\n"
+" -n,--new\n"
+" -u,--update\n"
+" -p,--patch\n"
+" -c,--clean\n"
+" -b,--build\n"
+" -U,--user\n"
+" -a,--asroot\n"
+" -t,--template\n"
+" -f,--force\n"
+" -h,--help\n"
+" --nobuildeps\n"
+" "
+msgstr ""
+
+#: bash/vpmbuild/messages:44
+msgid "Failed to download sources"
+msgstr ""
+
+#: bash/vpmbuild/messages:67
+msgid "Invalid \"%s\" function"
+msgstr ""
+
+#: bash/vpmbuild/messages:73
+msgid "%s found"
+msgstr ""
+
+#: bash/vpmbuild/messages:74
+msgid "Running %s() function"
+msgstr ""
+
+#: bash/vpmbuild/messages:75
+msgid "Failed to run %s()"
+msgstr ""
+
+#: bash/vpmbuild/messages:76
+msgid "Missing arguments"
+msgstr ""
+
+#: bash/vpmbuild/messages:77
+msgid "Adding %s"
+msgstr ""
+
+#: bash/vpmbuild/messages:78
+msgid "Deleting %s"
+msgstr ""
+
+#: bash/vpmbuild/messages:79 bash/vpmbuild/newbdir:342
+msgid "Downloading"
+msgstr ""
+
+#: bash/vpmbuild/messages:80
+msgid "Updating %s buildir"
+msgstr ""
+
+#: bash/vpmbuild/messages:81
+msgid "Buildir %s is to up date"
+msgstr ""
+
+#: bash/vpmbuild/messages:82
+msgid "Missing %s file"
+msgstr ""
+
+#: bash/vpmbuild/messages:83
+msgid "Missing %s directory"
+msgstr ""
+
+#: bash/vpmbuild/messages:84
+msgid "Running \"%s\" patch"
+msgstr ""
+
+#: bash/vpmbuild/messages:85
+msgid "Failed to apply \"%s\" patch"
+msgstr ""
+
+#: bash/vpmbuild/messages:86
+msgid "Failed to load \"%s\" file"
+msgstr ""
+
+#: bash/vpmbuild/messages:87
+msgid "Setting up auto mode \"%s\" flags"
+msgstr ""
+
+#: bash/vpmbuild/messages:88
+msgid "Failed to extract \"%s\" file"
+msgstr ""
+
+#: bash/vpmbuild/messages:89
+msgid "Stripping %s object"
+msgstr ""
+
+#: bash/vpmbuild/messages:90
+msgid "Installing %s into %s"
+msgstr ""
+
+#: bash/vpmbuild/messages:91
+msgid "Linking %s to %s"
+msgstr ""
+
+#: bash/vpmbuild/messages:92
+msgid "Unpacking %s file"
+msgstr ""
+
+#: bash/vpmbuild/messages:93
+msgid "Unable to use \"%s()\" and \"%s()\" at the same time"
+msgstr ""
+
+#: bash/vpmbuild/messages:94
+msgid "Function \"%s()\" forbiden in %s scope"
+msgstr ""
+
+#: bash/vpmbuild/messages:95
+msgid "Incompatible %s arch for %s systems"
+msgstr ""
+
+#: bash/vpmbuild/messages:96
+msgid "Unknow or inapropaite value %s"
+msgstr ""
+
+#: bash/vpmbuild/messages:97
+msgid "#### Validating %s package"
+msgstr ""
+
+#: bash/vpmbuild/messages:98
+msgid "#### Validating parent %s main package"
+msgstr ""
+
+#: bash/vpmbuild/messages:99
+msgid "#### Building %s package"
+msgstr ""
+
+#: bash/vpmbuild/messages:100
+msgid "#### End %s package validation"
+msgstr ""
+
+#: bash/vpmbuild/messages:101
+msgid "#### End %s package build"
+msgstr ""
+
+#: bash/vpmbuild/messages:102
+msgid "#### End parent %s main package validation"
+msgstr ""
+
+#: bash/vpmbuild/messages:103
+msgid "Current place is %s"
+msgstr ""
+
+#: bash/vpmbuild/messages:104
+msgid "Back place to %s"
+msgstr ""
+
+#: bash/vpmbuild/messages:105
+msgid "No directory to back found"
+msgstr ""
+
+#: bash/vpmbuild/messages:106
+msgid "Invalid %s kernel type"
+msgstr ""
+
+#: bash/vpmbuild/messages:107
+msgid "Bulk mode need a list"
+msgstr ""
+
+#: bash/vpmbuild/inherit:11
+msgid "Inherit schema is empty, using gnu by default"
+msgstr ""
+
+#: bash/vpmbuild/inherit:21
+msgid "Unsupported inherit schema %s"
+msgstr ""
+
+#: bash/vpmbuild/inherit:234
+msgid "Failed to set any configuration command"
+msgstr ""
+
+#: bash/vpmbuild/inherit:373
+msgid "Nothing to do using \"%s\" inherit"
+msgstr ""
+
+#: bash/vpmbuild/main:15
+msgid "Build package as root user is really very bad idea. If you really"
+msgstr ""
+
+#: bash/vpmbuild/main:16
+msgid "need do this, then use \"%s\" option to avoid this error message"
+msgstr ""
+
+#: bash/vpmbuild/main:20
+msgid "Running fakeroot environment using %s"
+msgstr ""
+
+#: bash/vpmbuild/main:30
+msgid "Building package as root user.... Good luck"
+msgstr ""
+
+#: bash/vpmbuild/main:32
+msgid "Running fakeroot environment, \"%s\" option will be ignored"
+msgstr ""
+
+#: bash/vpmbuild/main:56
+msgid "Current directory does looks like buildir"
+msgstr ""
+
+#: bash/vpmbuild/main:63
+msgid "\"%s\" buildir does not exist"
+msgstr ""
+
+#: bash/vpmbuild/main:72
+msgid "Unable to find \"%s\" buildir"
+msgstr ""
+
+#: bash/vpmbuild/main:73
+msgid "Unable to read \"%s\" directory content"
+msgstr ""
+
+#: bash/vpmbuild/main:74
+msgid "Unable to find an spec file on \"%s\""
+msgstr ""
+
+#: bash/vpmbuild/main:157
+msgid "Failed to create tar source"
+msgstr ""
+
+#: bash/vpmbuild/main:260
+msgid " * Trying next %s priority"
+msgstr ""
+
+#: bash/vpmbuild/main:326
+msgid "Unable to use %s as buildir. Are you crazy \\?"
+msgstr ""
+
+#: bash/vpmbuild/main:328
+msgid "Cleanning %s buildir"
+msgstr ""
+
+#: bash/vpmbuild/main:353
+msgid "Unable to detect linux distribution"
+msgstr ""
+
+#: bash/vpmbuild/main:354
+msgid "Unsupported %s linux distribution"
+msgstr ""
+
+#: bash/vpmbuild/main:364
+msgid "Unable to set archive tools for build system"
+msgstr ""
+
+#: bash/vpmbuild/main:365
+msgid "Unsupported %s archive suite"
+msgstr ""
+
+#: bash/vpmbuild/main:373
+msgid "Failed to detect any usable libc"
+msgstr ""
+
+#: bash/vpmbuild/main:432
+msgid "Unsupported or unknow file extension"
+msgstr ""
+
+#: bash/vpmbuild/main:444
+msgid "Unable to set work directory"
+msgstr ""
+
+#: bash/vpmbuild/main:449
+msgid "Multiple work directories found\\n"
+msgstr ""
+
+#: bash/vpmbuild/main:682
+msgid "No changelog file foud in %s"
+msgstr ""
+
+#: bash/vpmbuild/modifiers:14
+msgid "Missing value for %s() function"
+msgstr ""
+
+#: bash/vpmbuild/modifiers:15
+msgid "Only bolean value for %s() function"
+msgstr ""
+
+#: bash/vpmbuild/modifiers:29
+msgid "Only global scope is allowed for %s() function"
+msgstr ""
+
+#: bash/vpmbuild/modifiers:44
+msgid "Only local scope is allowed for %s() function"
+msgstr ""
+
+#: bash/vpmbuild/modifiers:1146
+msgid "Adding %s patch to list"
+msgstr ""
+
+#: bash/vpmbuild/modifiers:1178
+msgid "Preppending %s patch to list"
+msgstr ""
+
+#: bash/vpmbuild/modifiers:1210
+msgid "Adding %s sources"
+msgstr ""
+
+#: bash/vpmbuild/modifiers:1242
+msgid "Prepending %s sources"
+msgstr ""
+
+#: bash/vpmbuild/package:25
+msgid "Merging gconf schemas on a single file"
+msgstr ""
+
+#: bash/vpmbuild/package:38
+msgid "Mergin %s"
+msgstr ""
+
+#: bash/vpmbuild/package:79
+msgid "Deleting Perl unused files"
+msgstr ""
+
+#: bash/vpmbuild/package:89
+msgid "Deleting Perl empty directories"
+msgstr ""
+
+#: bash/vpmbuild/package:128
+msgid "Deleting /run related directories"
+msgstr ""
+
+#: bash/vpmbuild/package:165
+msgid "Including oficial documentation files"
+msgstr ""
+
+#: bash/vpmbuild/package:258
+msgid "Setting up mapages"
+msgstr ""
+
+#: bash/vpmbuild/package:343
+msgid "Setting up info pages"
+msgstr ""
+
+#: bash/vpmbuild/package:380
+msgid "Fixing pkgconfig files location"
+msgstr ""
+
+#: bash/vpmbuild/package:400
+msgid "Deleting empty directories"
+msgstr ""
+
+#: bash/vpmbuild/package:419
+msgid "Deleting libtool unused files"
+msgstr ""
+
+#: bash/vpmbuild/package:438
+msgid "Finding special permission files"
+msgstr ""
+
+#: bash/vpmbuild/package:514
+msgid "The nex special permissions files found, append it to setup file"
+msgstr ""
+
+#: bash/vpmbuild/package:539
+msgid "Files with special permissions found"
+msgstr ""
+
+#: bash/vpmbuild/package:613
+msgid "Stripping binaries and libraries"
+msgstr ""
+
+#: bash/vpmbuild/package:657
+msgid "Printing a package database"
+msgstr ""
+
+#: bash/vpmbuild/package:719
+msgid "%s package is blacklisted"
+msgstr ""
+
+#: bash/vpmbuild/package:789
+msgid "Running depends detection"
+msgstr ""
+
+#: bash/vpmbuild/package:796
+msgid "Finding shared libraries depends"
+msgstr ""
+
+#: bash/vpmbuild/package:798
+msgid "No shared libraries found"
+msgstr ""
+
+#: bash/vpmbuild/package:800
+msgid "Finding packages for libraries depends"
+msgstr ""
+
+#: bash/vpmbuild/package:810
+msgid "Searching %s on installed packages"
+msgstr ""
+
+#: bash/vpmbuild/package:828
+msgid "%s found inside %s package"
+msgstr ""
+
+#: bash/vpmbuild/package:830
+msgid "%s NOT found inside any installed package"
+msgstr ""
+
+#: bash/vpmbuild/package:834
+msgid "Skipping autodeps detection process"
+msgstr ""
+
+#: bash/vpmbuild/package:938
+msgid "\"%s\" architecture detected"
+msgstr ""
+
+#: bash/vpmbuild/package:943
+msgid "Skipping strip process"
+msgstr ""
+
+#: bash/vpmbuild/package:958
+msgid "Skipping delete empty dirs process"
+msgstr ""
+
+#: bash/vpmbuild/package:965
+msgid "Skipping delete libtool files process"
+msgstr ""
+
+#: bash/vpmbuild/package:972
+msgid "Skipping special permission files"
+msgstr ""
+
+#: bash/vpmbuild/package:977
+msgid "Find special permission files fail under fakeroot environment"
+msgstr ""
+
+#: bash/vpmbuild/cmdspec:168
+msgid "%s => Linking %s to %s"
+msgstr ""
+
+#: bash/vpmbuild/cmdspec:235
+msgid "%s => Copying %s to %s"
+msgstr ""
+
+#: bash/vpmbuild/cmdspec:291
+msgid "%s => Installing %s directory"
+msgstr ""
+
+#: bash/vpmbuild/cmdspec:380
+msgid "%s => Moving %s to %s"
+msgstr ""
+
+#: bash/vpmbuild/cmdspec:449
+msgid "%s => Dumping %s to %s"
+msgstr ""
+
+#: bash/vpmbuild/cmdspec:498
+msgid "%s => Creating %s directory"
+msgstr ""
+
+#: bash/vpmbuild/cmdspec:530
+msgid "%s => Changing %s perms to %s"
+msgstr ""
+
+#: bash/vpmbuild/cmdspec:610
+msgid "Missing path"
+msgstr ""
+
+#: bash/vpmbuild/cmdspec:616
+msgid "Missing mode"
+msgstr ""
+
+#: bash/vpmbuild/cmdspec:820
+msgid "Unable to set extract command for %s file"
+msgstr ""
+
+#: bash/vpmbuild/cmdspec:840
+msgid "%s => %s kernel option not found"
+msgstr ""
+
+#: bash/vpmbuild/cmdspec:842
+msgid "%s => %s kernel option is not set"
+msgstr ""
+
+#: bash/vpmbuild/cmdspec:876
+msgid "This is a production system"
+msgstr ""
+
+#: bash/vpmbuild/cmdspec:990
+msgid "Failed to apply netx patches :\\n%s"
+msgstr ""
+
+#: bash/vpmbuild/cmdspec:1009
+msgid "%s command not found"
+msgstr ""
+
+#: bash/vpmbuild/auto:46
+msgid "Adding setup scripts"
+msgstr ""
+
+#: bash/vpmbuild/auto:55
+msgid "Replacing tokens on %s file"
+msgstr ""
+
+#: bash/vpmbuild/auto:131
+msgid "Adding crond and schedule files"
+msgstr ""
+
+#: bash/vpmbuild/auto:164
+msgid "Missing or invalid %s() function"
+msgstr ""
+
+#: bash/vpmbuild/auto:187
+msgid "Adding all .%s files"
+msgstr ""
+
+#: bash/vpmbuild/auto:241
+msgid "Adding icon and pixmaps files"
+msgstr ""
+
+#: bash/vpmbuild/auto:255
+msgid "Running Automatic addition files hooks"
+msgstr ""
+
+#: bash/vpmbuild/newbdir:326
+msgid "\"%s\" does not looks like as regular file or url"
+msgstr ""
+
+#: bash/vpmbuild/newbdir:336
+msgid "Failed to get name from \"%s\" file"
+msgstr ""
+
+#: bash/vpmbuild/newbdir:337
+msgid "Failed to get version from \"%s\" file"
+msgstr ""
+
+#: bash/vpmbuild/newbdir:358
+msgid "The archive \"%s\" looks like empty"
+msgstr ""
+
+#: bash/vpmbuild/check:7
+msgid "Invalid \"%s\" charset on version string"
+msgstr ""
+
+#: bash/vpmbuild/check:21
+msgid "Unable to set valid sources for \"%s\" package"
+msgstr ""
+
+#: bash/vpmbuild/check:56
+msgid "Invalid %s pkgtype"
+msgstr ""
+
+#: bash/vpmbuild/check:67
+msgid "Invalid %s pkgarch"
+msgstr ""
+
+#: bash/vpmbuild/check:82
+msgid "Invalid pkg sections :"
+msgstr ""
+
+#: bash/vpmbuild/check:98
+msgid "Package only can be build on %s architectures"
+msgstr ""
+
+#: bash/vpmbuild/check:125
+msgid "The nex selected patches not found"
+msgstr ""
+
+#: bash/vpmbuild/check:139
+msgid "The nex package functions are missing :"
+msgstr ""
+
+#: bash/vpmbuild/check:165
+msgid "%s have missing build depends :\\n%s"
+msgstr ""
+
+#: bash/vpmbuild/build:43
+msgid "Installing %s package"
+msgstr ""
+
+#: bash/vpmbuild/build:44
+msgid "Failed to install %s"
+msgstr ""
+
+#: bash/vpmbuild/build:125
+msgid "The nex package functions are missing :\\n%s"
+msgstr ""
+
+#: bash/vpmbuild/build:129
+msgid "Turnning off multipack flag. No valid subpackage found"
+msgstr ""
+
+#: bash/vpmbuild/build:152
+msgid "Update srcdir is disabled"
+msgstr ""
+
+#: bash/vpmbuild/build:163
+msgid "Failed to clean \"%s\" srcdir"
+msgstr ""
+
+#: bash/vpmbuild/build:178
+msgid "%s package types does not need unpack sources"
+msgstr ""
+
+#: bash/vpmbuild/build:193
+msgid "Patching \"%s\" sources is disabled by demand"
+msgstr ""
+
+#: bash/vpmbuild/build:276 bash/vpmbuild/build:338
+msgid "Creating vpm package"
+msgstr ""
+
+#: bash/vpmbuild/build:367
+msgid "Updating date on specfile"
+msgstr ""
+
+#: bash/vpmbuild/build:375 bash/vpmbuild/build:380
+msgid "This compilation have build errors\\n%s"
+msgstr ""

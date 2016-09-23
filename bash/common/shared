@@ -1,0 +1,1011 @@
+#!/bin/bash
+
+set +o posix
+shopt -s expand_aliases
+
+if builtin command -v gettext >/dev/null
+then
+	alias gettext='gettext -e'
+else
+	alias gettext='printf %s'
+fi
+
+ERROR="$(gettext 'ERROR  : ')"
+LOG="$(gettext 'LOG    : ')"
+FATAL="$(gettext 'EXIT   : ')"
+WARN="$(gettext 'WARN   : ')"
+DONE="$(gettext 'DONE')"
+FAIL="$(gettext 'FAIL')"
+SYSTEM="$(gettext 'SYSTEM : ')"
+DEBUG="$(gettext 'DEBUG  : ')"
+
+include()
+{
+	local FILE
+	
+	[ -z "${1}" ] && printme -f "die" -l "${FUNCNAME}" msg_mis_args
+	
+	FILE="${VPMLIB}/${1}"
+	[ ! -f "${FILE}" ] && FILE="${VPM_COMMON_HOME}/${1}"
+	
+	[ -r "${FILE}" ] || printme -f "die" msg_mis_file  "${1}"
+	load "${FILE}"   || printme -f "die" msg_fail_load "${1}"
+	
+	return 0
+}
+
+sys()
+{
+	local MSG="${1}"
+	shift
+	
+	if [[ "${AND_VERBOSE}" == 1 || "${AND_DEBUG}" == "1" ]]
+	then
+		printf "${SYSTEM}${MSG}\n" "${@}"
+	fi
+	
+	return 0	
+}
+
+msg()
+{
+	local MSG="${1}"
+	shift
+	
+	if [ "${AND_QUIET}" == "0" ]
+	then
+		printf "${MSG}\n" "${@}"
+	fi
+	
+	return 0
+}
+ 
+debug()
+{
+	local MSG="${1}"
+	shift
+	
+	if [ "${AND_VERBOSE}" == "1" ]
+	then
+		printf "${DEBUG}${MSG}\n" "${@}"
+	fi
+	
+	return 0
+}
+ 
+warn()
+{
+	local MSG="${1}"
+	shift
+	
+	printf "${WARN}${MSG}\n" "${@}"
+	
+	return 0
+}
+
+error()
+{
+	local MSG="${1}"
+	shift
+	
+	printf "${ERROR}${MSG}\n" "${@}"
+	
+	return 0
+}
+
+log()
+{
+	local MSG="${1}"
+	shift
+	
+	printf "${LOG}${MSG}\n" "${@}"
+	
+	return 0
+}
+
+die()
+{
+	local MSG="${1}"
+	shift
+	
+	printf "${ERROR}${MSG}\n" "${@}"
+	
+	exit 1
+}
+
+load()
+{
+	[ ! -f "${1}" ] && return 1
+	. ${1} || return 1
+	
+	return 0
+}
+
+get_full_path()
+{
+	readlink -f ${1}
+	return $?
+}
+
+trim()
+{
+	echo ${@}
+	
+	return 0
+}
+
+trim_slashes()
+{
+	echo ${@} | tr -s '/'
+	
+	return 0
+}
+
+trim_trailing()
+{
+	local INPUT LAST MID
+
+	INPUT="${1}"
+
+	LAST="${INPUT:$((${#INPUT} - 1))}"
+	case "X${LAST}" in
+		X/  ) MID="${INPUT%/*}" ;;
+		X?* ) MID="${INPUT}" ;;
+	esac
+
+	echo -ne "${MID}"
+
+	return 0
+}
+
+trim_grep_chars()
+{
+	echo "${@}" | sed \
+	-e "s#\+#\\\+#g" \
+	-e "s#\-#\\\-#g" \
+	-e "s#\.#\\\.#g"
+}
+
+trim_start_end_dashes()
+{
+	echo "${@}" | sed \
+	-e 's/^-//g' \
+	-e 's/-$//g'
+}
+
+trim_extensions()
+{
+	local EXT INPUT E
+	
+	INPUT="${1}"
+	EXT="
+		.tar .tar.lzma .tlz .tar.xz .txz .tar.gz .tgz .tar.bz .tar.bz2
+		.tbz .tbz2 .tar.Z .tar.z .tz .tar.lzop .zip .rar .vpm .src.rpm
+	"
+	[ -z "${INPUT}" ] && return 1
+		
+	for E in ${EXT}
+	do
+		INPUT="$(echo ${INPUT} | sed -e 's/'${E}'$//')"
+	done
+	
+	printf -- "${INPUT}\n"
+	
+	return 0
+}
+
+trim_url_charsets()
+{
+	local INPUT="${1}"
+	[ -z "${INPUT}" ] && return 1
+	
+	echo ${INPUT} | sed \
+	-e 's/\?.*//g' \
+	-e 's/\/download$//g' \
+	-e 's/\/from\/.*\/mirror$//g' \
+	-e 's/\#.*//g' 
+	
+	return $?
+}
+
+trim_no_allowed()
+{
+	printf -- '%s\n' ${@} | sed -e '/^[!,-]/d' | tr -d "'"
+
+	return $?
+}
+
+trim_normal()
+{
+	printf '%s\n' ${@} | sed -e '/.*|.*/!d'
+
+	return $?
+}
+
+trim_operator()
+{
+	printf '%s\n' ${@} | sed -e '/.*|.*/d'
+
+	return $?
+}
+
+only_uniq()
+{
+	declare INPUT=(${@})
+
+	printf "%s\n" "${INPUT[@]}" | awk 'x[$0]++ == 0' | tr '\n' ' '
+}
+
+only_upper()
+{
+	echo ${@} | tr '[[:lower:]]' '[[:upper:]]'
+	
+	return $?
+}
+
+only_lower()
+{
+	echo ${@} | tr '[[:upper:]]' '[[:lower:]]'
+	
+	return $?
+} 
+
+parse_config()
+{
+	local LD_LIBC6 REAL
+	
+	DEF_LIBC6="${DEF_LIBC6}"
+	DEF_DISTRO="${DEF_DISTRO}"
+	DEF_ARCHIVE="${DEF_ARCHIVE}"
+	DEF_FILTER="${DEF_FILTER}"
+	DEF_PREFIX="${DEF_PREFIX}"
+	DEF_SYSARCH="${DEF_SYSARCH:-$(uname -m)}"
+	DEF_PKGARCH="${DEF_PKGARCH}"
+	DEF_SYSTEM="$(only_lower ${DEF_SYSTEM})"
+	DEF_CFLAGS="${DEF_CFLAGS}"
+	DEF_CXXFLAGS="${DEF_CXXFLAGS}"
+	DEF_CPPFLAGS=""
+	DEF_LDFLAGS="${DEF_LDFLAGS}"
+	DEF_TRIPLET="${DEF_TRIPLET}"
+	DEF_BUILDROOT="${DEF_BUILDROOT}"
+	
+	LD_LIBC6="$(/sbin/ldconfig -V | grep -Eo "(\(GNU.*|EGLIBC.*\))" | tr -d "[()]")"
+		
+	case ${LD_LIBC6} in
+		"GNU libc"* ) DEF_LIBC6="glibc"  ;;
+		"EGLIBC"* )   DEF_LIBC6="eglibc" ;;
+	esac
+	
+	case "X${DEF_DISTRO}" in
+		X )
+			if [ -f /etc/debian_version ]
+			then
+				DEF_DISTRO="debian"
+			elif [ -f /etc/slackware-version ]
+			then
+				DEF_DISTRO="slackware"
+			elif [ -f /etc/vacteria-release ]
+			then
+				DEF_DISTRO="vacteria"
+			elif [ -f /etc/arch-release ]
+			then
+				DEF_DISTRO="arch"
+			elif [ -f /etc/lfs-release ]
+			then
+				DEF_DISTRO="lfs"
+			fi
+		;;
+		* ) DEF_DISTRO="$(only_lower ${DEF_DISTRO})" ;;
+	esac
+	
+	case "X${DEF_ARCHIVE}" in
+		X )
+			for I in $(type -pa tar)
+			do
+				REAL="$(readlink -f ${I})"
+				case "$(${REAL} --version | head -1)" in
+						tar* ) 
+							DEF_ARCHIVE="tar"
+							alias dotar='tar'
+							break 
+						;;
+				esac
+			done
+			
+			if [ -z "${DEF_ARCHIVE}" ]
+			then
+				for I in $(type -pa bsdtar)
+				do
+					REAL="$(readlink -f ${I})"
+					case "$(${REAL} --version)" in
+							bsdtar* ) 
+								DEF_ARCHIVE="libarchive"
+								alias dotar='bsdtar'
+								break 
+							;;
+					esac
+				done
+			fi
+		;;
+		* ) DEF_ARCHIVE="" ;;
+	esac
+	
+	case "X${DEF_FILTER}" in
+		X ) DEF_FILTER="gzip"          ;;
+		* ) DEF_FILTER="${DEF_FILTER}" ;;
+	esac
+
+	case "X${DEF_PREFIX}" in
+		X )
+			case "${DEF_DISTRO}" in
+				debian|slackware|arch) DEF_PREFIX="usr/local" ;;
+				vacteria|lfs         ) DEF_PREFIX="usr" ;;
+			esac
+		;;
+		* ) DEF_PREFIX="${DEF_PREFIX}" ;;
+	esac
+
+	case "X${DEF_SYSTEM}" in
+		Xtoolchain )
+			DEF_TOOLCHAIN_CC="${DEF_TOOLCHAIN_CC:-"gcc -isystem /usr/include"}"
+			DEF_TOOLCHAIN_CX="${DEF_TOOLCHAIN_CX:-"g++ -isystem /usr/include"}"
+			DEF_TOOLCHAIN_LD="${DEF_TOOLCHAIN_LD:-"-Wl,-rpath-link,/usr/lib:/lib"}"
+		;;
+		* ) 
+			DEF_SYSTEM="production" 
+			DEF_TOOLCHAIN_CC=""
+			DEF_TOOLCHAIN_CX=""
+			DEF_TOOLCHAIN_LD=""
+		;;	
+	esac
+	
+	if [ -z "${DEF_PKGARCH}" ]
+	then
+		case "${DEF_SYSARCH}" in
+			i?86   ) DEF_PKGARCH="x32" ;;
+			x86_64 ) DEF_PKGARCH="x64" ;;
+		esac
+	fi
+
+	if [ -z "${DEF_CFLAGS}" ]
+	then
+		case "${DEF_SYSARCH}" in
+			i?86   ) DEF_CFLAGS="-O2 -march=i486 -mtune=${DEF_SYSARCH}" ;;
+			x86_64 ) DEF_CFLAGS="-O2 -march=x86-64 -mtune=generic -fPIC" ;;
+		esac
+	fi
+	
+	if [ -z "${DEF_CXXFLAGS}" ]
+	then
+		case "${DEF_SYSARCH}" in
+			i?86   ) DEF_CXXFLAGS="-O2 -march=i486 -mtune=i686"           ;;
+			x86_64 ) DEF_CXXFLAGS="-O2 -march=x86-64 -mtune=generic -fPIC" ;;
+		esac
+	fi
+		
+	if [ -z "${DEF_LDFLAGS}" ]
+	then
+		DEF_LDFLAGS="-Wl,--hash-style=gnu -Wl,--as-needed"
+	fi
+
+	if [ -z "${DEF_TRIPLET}" ]
+	then
+		DEF_TRIPLET="${DEF_SYSARCH}-${DEF_DISTRO}-linux-gnu"
+	fi
+
+	if [ -z "${DEF_BUILDROOT}" ]
+	then
+		DEF_BUILDROOT="${HOME}/vpmbuild"
+	fi
+
+	return 0
+}
+
+parse_def_variables()
+{
+	local HOLD_SUBPKGS
+	
+	#
+	# Variables from spec file
+	#
+	VPM_NAME="${NAME}"
+	VPM_VERSION="${VERSION}"
+	VPM_MINOR="${VERSION%.*}"
+	VPM_SECTIONS="${SECTIONS}"
+	VPM_RELEASE="${RELEASE:-1}"
+	VPM_RUNDEPS="${RUNDEPS}"
+	VPM_BUILDEPS="${BUILDEPS}"
+	VPM_OPTDEPS="${OPTDEPS}"
+	VPM_SHLIBDEPS="${SHLIBDEPS}"
+	VPM_CONFLICTS="${CONFLICTS}"
+	VPM_BLACKLIST="${BLACKLIST}"
+	VPM_SUBPKGS="${AND_SUBPKGS:-${SUBPKGS}}"
+	VPM_SOURCES="${SOURCES}"
+	VPM_PATCHES="${PATCHES}"
+		
+	#
+	# Especific for build process
+	#
+	VPM_PKGTYPE="pkg"
+	VPM_PKGPATCH="${AND_PATCH}"
+	VPM_HOLDON="${HOLDON:-none}"
+	VPM_BUILDON="${BUILDON:-all}"
+	VPM_UNPACK="1"
+	VPM_MKPKG="${AND_MKPKG}"
+	VPM_RMEMPTY="0"
+	VPM_RMLIBTOOL="1"
+	VPM_SETPERM="${AND_SETPERM}"
+	VPM_LDCONFIG="${AND_LDCONFIG}"
+	VPM_AUTODEPS="${AND_AUTODEPS}"
+	VPM_STRIP="${AND_STRIP}"
+	
+	# First hand multipack impresion
+	if [ -n "${SUBPKGS}" ]
+	then
+		HOLD_SUBPKGS="${SUBPKGS}"
+		SUBPKGS="$(trim_no_allowed ${SUBPKGS})"
+		[ "$?" != "0" ] && SUBPKGS="${HOLD_SUBPKGS}"
+	fi
+	
+	if [ -n "${SUBPKGS}" ]
+	then
+		VPM_MULTIPACK="1"
+	else
+		VPM_MULTIPACK="0"
+	fi
+	
+	#
+	# Subtitution from make.conf
+	#
+	case "${DE_FILTER}" in
+		xz|gzip|gz|bzip2|bz|bz2 )
+			VPM_FILTER="${DEF_FILTER}"
+			case "${DEF_FILTER}" in
+				xz         )
+					VPM_FILTER_CMD="xz"
+					VPM_FILTER_EXT=".xz" 
+					VPM_FILTER_TAR="J"
+				;;
+				gzip|gz     ) 
+					VPM_FILTER_CMD="gzip"
+					VPM_FILTER_EXT=".gz"  
+					VPM_FILTER_TAR="z"
+				;;
+				bzip2|bz|bz2)
+					VPM_FILTER_CMD="bzip2"
+					VPM_FILTER_EXT=".bz2"
+					VPM_FILTER_TAR="j" 
+				;;
+			esac
+		;;
+		* )
+			VPM_FILTER="gzip"
+			VPM_FILTER_TAR="z"
+			VPM_FILTER_CMD="gzip"
+			VPM_FILTER_EXT=".gz"
+		;;
+	esac
+	
+	VPM_DISTRO="${DEF_DISTRO}"
+	VPM_PREFIX="${DEF_PREFIX}"
+	VPM_REALARCH="${DEF_SYSARCH}"
+	VPM_PKGARCH="${DEF_PKGARCH}"
+	VPM_CFLAGS="${DEF_CFLAGS}"
+	VPM_CXXFLAGS="${DEF_CXXFLAGS}"
+	VPM_CPPFLAGS=""
+	VPM_LDFLAGS="${DEF_LDFLAGS}"
+	VPM_SYSTEM="${DEF_SYSTEM}"
+	VPM_TRIPLET="${DEF_TRIPLET}"
+	VPM_CFLAGS="$(trim ${VPM_CFLAGS} ${DEF_APPEND_CFLAGS})"
+	VPM_CXXFLAGS="$(trim ${VPM_CXXFLAGS} ${DEF_APPEND_CXXFLAGS})"
+	VPM_LDFLAGS="$(trim ${VPM_LDFLAGS} ${DEF_APPEND_LDFLAGS})"
+	VPM_LIBC6="${DEF_LIBC6}"
+	VPM_PKGTOOLS="${DEF_ARCHIVE}"
+	
+	#
+	# Modifiers file reset values
+	#
+	VPM_MAKEFLAGS="1"                                                                       #VPM_USE_MAKEFLAGS=""
+	VPM_MAKETEST="0"                                                                        #VPM_MAKE_TEST=""
+	VPM_BCONFIG=""                                                                          #VPM_BEFORE_CONFIG
+	VPM_BMAKE=""                                                                            #VPM_BEFORE_MAKE
+	VPM_BINSTALL=""                                                                         #VPM_BEFORE_INSTALL
+	VPM_UOPTS=""                                                                            #VPM_UNSET_OPTS
+	VPM_DESTCMD="DESTDIR"                                                                   #VPM_DEST_CMD
+	VPM_DESTDIR="$(trim_slashes "${VPM_BUILDIR}/${VPM_NAME##${VPM_BUILDIR}}-root/data")"    #VPM_DEST_DIR
+	VPM_BASEDIR="$(trim_slashes "${VPM_BUILDIR}/${VPM_NAME##${VPM_BUILDIR}}-root")"         #VPM_BASE_DIR
+	VPM_DESTGT="install"                                                                    #VPM_DEST_TGT
+	VPM_MAKECMD="make"                                                                      #VPM_MAKE_CMD
+	VPM_INSTCMD="${VPM_MAKECMD} ${VPM_DESTCMD}=${VPM_DESTDIR} ${VPM_DESTGT}"                #VPM_INSTALL_CMD
+	VPM_FILESNAME="${VPM_NAME}"
+
+
+	#
+	# Reset paths
+	#
+	VPM_LIBEXECDIR="/${VPM_PREFIX}/lib/${VPM_PKGNAME}"             # * Migrate to build
+	VPM_INCLUDEDIR="/${VPM_PREFIX}/include"
+	VPM_DATADIR="/${VPM_PREFIX}/share"
+	VPM_DOCDIR="${VPM_DATADIR}/doc/${VPM_NAME}-${VPM_VERSION}"     # * migrate to build
+
+	return 0
+}
+
+runtime_vars()
+{
+	VPM_BASE="/var/vpm"
+	VPM_HOME="$(trim_slashes "${AND_ROOT}/${VPM_BASE}")"
+	VPM_TMP_DIR="${VPM_HOME}/tmp"
+	VPM_CACHE_DIR="${VPM_HOME}/cache"
+	VPM_DATA_DIR="${VPM_HOME}/data"
+	VPM_SETUP_DIR="${VPM_HOME}/setup"
+	VPM_PKG_FILES="${VPM_HOME}/pkgfiles"
+	VPM_CHLOG_FILES="${VPM_HOME}/changelogs"
+	VPM_UPGRADE_DIR="${VPM_HOME}/upgrade"	
+	VPM_DATABASE="${VPM_DATA_DIR}/packages.db"
+	VPM_HOST_DATABASE="${VPM_ROOT}/${VPM_BASE}/data/packages.db"
+	VPM_REPOFILE="/etc/vpm/mirrors"
+	
+	VPM_SETUP_FUNCTIONS=(
+		pre_install
+		post_install
+		pre_remove
+		post_remove
+		pre_upgrade
+		post_upgrade
+		exec_config
+	)
+	
+	VPM_VALID_SECTIONS=(
+		stage
+		core
+		devel
+		lang
+		doc
+		xorg
+		net
+		graph
+		media
+		desk
+		gtk
+		qt
+		gnome
+		mate
+		xfce
+		kde
+		extra
+		util
+		contrib
+		meta
+		data
+		auth
+		crypt
+	)
+
+	VPM_VALID_DEPSTYPES=(
+		buildeps
+		rundeps
+		optdeps
+		shlibdeps
+		conflicts
+	)
+	
+	VPM_VALID_PKGTYPES=(
+		pkg 
+		subpkg 
+		metapkg 
+		fakepkg 
+		binpkg
+	)
+
+	VPM_VALID_PKGARCHS=(
+		x32
+		x64
+		noarch
+	)
+	
+	VPM_VALID_HOLDON=(
+		none
+		install
+		remove
+		upgrade
+		config
+		all
+	)
+	
+	return 0
+}
+
+build_vars()
+{
+	VPM_CURDIR="$(pwd)"
+
+	INHERIT_CONFIG_FILE=".configsrc"
+	INHERIT_MAKE_FILE=".makesrc"
+	INHERIT_MAKE_TEST_FILE=".maketest"
+	INHERIT_INSTALL_FILE=".installsrc"
+
+	VPM_SPEC_FUNTIONS=(
+		pkg_setup 
+		pkg_pre_clean
+		pkg_pre_unpack 
+		pkg_pre_patch 
+		pkg_pre_compile 
+		pkg_compile 
+		pkg_post_compile 
+		pkg_pre_packcage
+		pkg_post_package
+	)
+
+	VPM_VALID_FILES=(
+		run
+		rotate
+		pam
+		limits
+		ramdisk
+		profile
+		bashrc
+		logout
+		login
+		completion
+		rules
+		rcconf
+		rsyslogd
+		desktop
+		xinetd
+		icon
+		xinitrc
+	)
+
+	VPM_VALID_PROCESS=(
+		merge_schemas 
+		sanity_perl
+		sanity_fonts
+		sanity_dirs
+		setup_docs 
+		setup_manpages 
+		setup_infopages
+		setup_pkgconfig 
+		sanity_empty_dirs 
+		sanity_libtool 
+		strip_binaries 
+		print_package_file
+		compute_depends
+		put_changelog
+		find_special_perms
+	)
+	
+	return 0
+}
+
+chdir()
+{
+	local DEST="${1}"
+
+	if [ -d "${DEST}" ]
+	then
+		if [ -n ${STACK} ]
+		then
+			unset STACK
+		fi
+
+		export STACK="$(pwd)"
+		cd ${DEST}
+		printme -f "log" -l "${FUNCNAME}" msg_now_in "${DEST}"
+	else
+		printme -f "die" -l "${FUNCNAME}" msg_mis_dir "${DEST}"
+	fi
+
+	return 0		
+}
+
+backdir()
+{
+	if [ -n "${STACK}" ]
+	then
+		if [ -d "${STACK}" ]
+		then
+			cd ${STACK}
+			printme -f "log" -l "${FUNCNAME}" msg_back_to "${STACK}"
+		else
+			printme -f "die" -l "${FUNCNAME}" msg_mis_dir "${STACK}"
+		fi
+	else
+		printme -f "die" -l "${FUNCNAME}" msg_mis_stack
+	fi
+
+	return 0
+}
+
+commander()
+{
+  builtin command -v ${1} >/dev/null
+  
+  return $?
+}
+
+validate_sections()
+{
+	local INPUT X Y FOUND
+	
+	INPUT="${@}"
+	for X in ${INPUT}
+	do
+		FOUND="0"
+		for Y in ${VPM_VALID_SECTIONS[@]}
+		do
+			if [ "${X}" == "${Y}" ]
+			then
+				FOUND="1"
+				break
+			fi
+		done
+		[ "${FOUND}" == "0" ] && FAIL_SECTIONS="${FAILED} ${X}"
+	done
+	
+	[ -n "${FAIL_SECTIONS}" ] && return 1
+	
+	return 0
+}
+
+validate_pkgarchs()
+{
+	local INPUT A X FOUND FILED INT
+	
+	INPUT="${1}"
+	FOUND="0"
+	for X in ${VPM_VALID_PKGARCHS[@]}
+	do
+		if [ "${INPUT}" == "${X}" ]
+		then
+			case ${INPUT} in
+				x64 )
+					case ${VPM_PKGARCH} in
+						x64|noarch )  FOUND="1" ; break ;;
+					esac
+				;;
+				x32 )
+					case ${VPM_PKGARCH} in
+						x32|noarch )  FOUND="1" ; break ;;
+					esac
+				;;
+				noarch )
+					FOUND="1"
+					break
+				;;
+			esac
+		fi
+	done
+	
+	[ "${FOUND}" == "0" ] && return 1
+	
+	return 0
+}
+
+validate_pkgtypes()
+{
+	local INPUT X FOUND FILED INT
+	
+	INPUT="${1}"
+	FOUND="0"
+	
+	for X in ${VPM_VALID_PKGTYPES[@]}
+	do
+		if [ "${INPUT}" == "${X}" ]
+		then
+			FOUND="1"
+			break
+		fi
+	done
+	
+	[ "${FOUND}" == "0" ] && return 1
+
+	return 0
+}
+
+archive_info()
+{
+	[[ "${#@}" -lt "2" || "${#@}" -gt "3" ]] && return 0
+	
+	local OPTS INPUT GEN USE_VERB FILE CLEAN_URL URI_PROTO URI_ADDR
+	local URI_FILE NOPATH ONLY_NAME ONLY_EXT FILE_VERSION FILE_NAME
+	local ONLY_ARCH XCMD LCMD ARG
+
+	OPTS="$(getopt -o ulnvaefUApV -l unpack,list,name,version,arch,extension,file,url,address,proto,verbose -- "$@")"
+	eval set -- ${OPTS}
+	while true
+	do
+		case ${1} in
+			-u|--unpack   ) PARAM='unpack'    ;;
+			-l|--list     ) PARAM='list'      ;;
+			-n|--name     ) PARAM='name'      ;;
+			-v|--version  ) PARAM='version'   ;;
+			-a|--arch     ) PARAM='arch'      ;;
+			-e|--extension) PARAM='extension' ;;
+			-f|--file     ) PARAM='file'      ;;
+			-U|--url      ) PARAM='url'       ;;
+			-A|--address  ) PARAM='address'   ;;
+			-p|--proto    ) PARAM='proto'     ;;
+			-V|--verbose  ) USE_VERB="1"      ;;
+			--            ) shift ; break     ;;
+		esac
+		shift
+	done
+	INPUT="${@}"
+	[ "${USE_VERB}" == "1" ] && GEN="v"
+
+	set -- ${INPUT}
+	FILE="$(trim_trailing ${1})"
+	[ -z "${FILE}" ] && return 1
+
+	CLEAN_URL="$(trim_url_charsets ${FILE})"
+	URI_PROTO="${CLEAN_URL%%:*}"
+	URI_ADDR="${CLEAN_URL##*:}"
+	URI_FILE="${CLEAN_URL##*/}"
+	NOPATH="${URI_FILE}"
+	ONLY_NAME="$(trim_extensions ${NOPATH})"
+	ONLY_EXT="${NOPATH##${ONLY_NAME}}"
+
+	case "x${ONLY_EXT}" in
+		"x.vpm" | "x" )
+			if [ "${ONLY_EXT}" == ".vpm" ]
+			then
+				ONLY_ARCH="$(echo ${NOPATH} | grep -Eo -- "-(x32|x64|noarch|ia32)." | tr -d '[\-,\.]')"
+				FILE_VERSION="$(echo ${NOPATH} | grep -Eo -- '-[[:digit:]].*' | sed -e 's/'${ONLY_EXT}'//g' -e 's/'${ONLY_ARCH}'//g' -e 's/-//g')"
+			else
+				ONLY_ARCH="$(echo ${NOPATH} | grep -Eo -- "-(x32|x64|noarch|ia32)" | tr -d '[\-,\.]')"
+				if [ -n "${ONLY_ARCH}" ]
+				then
+					FILE_VERSION="$(echo ${NOPATH} | grep -Eo -- '-[[:digit:]].*' | sed -e 's/'${ONLY_ARCH}'//g' -e 's/-//g')"
+				else
+					FILE_VERSION="$(echo ${NOPATH} | grep -Eo -- '-[[:digit:]].*' | sed -e 's/-//g')"
+				fi
+			fi
+
+			if [ -n "${FILE_VERSION}" ]
+			then
+				FILE_NAME="$(echo ${NOPATH} | sed -e 's/-'${FILE_VERSION}'*.*//g')"
+			else
+				FILE_NAME="${NOPATH}"
+			fi
+		;;
+		* )
+			if [ -n "${ONLY_EXT}" ]
+			then
+				FILE_VERSION="$(echo ${NOPATH} | grep -Eo '(\-|_)[[:digit:]].*' | sed -e 's/'${ONLY_EXT}'//g' -e 's/^[-|_]//g' -e 's/.orig//g')"
+			else
+				FILE_VERSION="$(echo ${NOPATH} | grep -Eo '(\-|_)[[:digit:]].*' | sed -e 's/^[-|_]//g')"
+			fi
+
+			if [ -n "${FILE_VERSION}" ]
+			then
+				FILE_NAME="${NOPATH//[-,_]${FILE_VERSION}*}"
+			else
+				FILE_NAME="${NOPATH}"
+			fi
+		;;
+	esac
+
+	ARCHIVE_TOOLS="bsdtar"
+
+	if [ "${VPM_PKGTOOLS}" == "bsdtar" ]
+	then
+		case "${ONLY_EXT}" in
+			.tar.*|.zip|.vpm|.t[gz,bz,bz2,xz,lz,Z] )
+				XCMD="bsdtar -x${GEN}f"
+				LCMD="bsdtar -tf"
+			;;
+			.rar )
+				XCMD="unrar x"
+				LCMD="unrar l"
+			;;
+			.Z|.z|.7Z|.7z )
+				XCMD="pzip x"
+				LCMD="pzip l"
+			;;
+			* )
+				XCMD=""
+				LCMD=""
+			;;
+		esac
+	else
+		case "${ONLY_EXT}" in
+			.tar|.tar.*|.vpm|.t[gz,bz,bz2,xz,lz,Z]* )
+				case "$(file --mime-typ ${FILE} | gawk '{print $2}' | tr -d ';')" in
+					application/x-gzip ) ARG="z" ;;
+					application/x-bzip ) ARG="j" ;;
+					application/x-xz   ) ARG="J" ;;
+					application/x-lzma ) ARG="J" ;;
+				esac
+
+				XCMD="${VPM_SET_XCMD:-tar ${VPM_ADD_XCMD} -x${ARG}${GEN}f}"
+				LCMD="tar -tf"
+			;;
+			.zip )
+				XCMD="${VPM_SET_XCMD:-unzip ${VPM_ADD_XCMD}}"
+				LCMD="unzip -v -l"
+			;;
+			.rar )
+				XCMD="${VPM_SET_XCMD:-unrar x ${VPM_ADD_XCMD}}"
+				LCMD="unrar l"
+			;;
+			.Z|.z|.7Z|.7z )
+				XCMD="${VPM_SET_XCMD:-pzip x ${VPM_ADD_XCMD}}"
+				LCMD="pzip l"
+			;;
+			* )
+				XCMD=""
+				LCMD=""
+			;;
+		esac
+	fi
+	case "${PARAM}" in
+		unpack    ) echo "${XCMD}"         ;;
+		list      ) echo "${LCMD}"         ;;
+		name      ) echo "${FILE_NAME}"    ;;
+		version   ) echo "${FILE_VERSION}" ;;
+		arch      ) echo "${ONLY_ARCH}"    ;;
+		extension ) echo "${ONLY_EXT}"     ;;
+		filter    ) echo "${XFIL}"         ;;
+		file      ) echo "${URI_FILE}"     ;;
+		url       ) echo "${CLEAN_URL}"    ;;
+		address   ) echo "${URI_ADDR}"     ;;
+		proto     ) echo "${URI_PROTO}"    ;;
+	esac
+
+	return 0
+}
+
+check_package_name()
+{
+	local INPUT OUTPUT
+	INPUT="${1}"
+	
+	OUTPUT="$(echo ${INPUT} | grep -E -- ".*-[0-9].*-(x32|x64|noarch|ia32).vpm")"
+	[ -z "${OUTPUT}" ] && return 1
+
+	return 0
+}
+
+read_control_field()
+{
+	local FIELD FILE
+	
+	if [ "${#@}" -eq "2" ]
+	then
+		FILE="${1}"
+		FIELD="${2}"
+
+		if [ -f "${FILE}" ]
+		then
+			case $(only_upper ${FIELD}) in
+				CONTENT ) sed -e '/^CONTENT.*:/,/^$/!d' ${FILE} | sed -e '/^CONTENT/d' ;;
+				*       )
+					set -- $(egrep "^${FIELD}.*:" ${FILE} | cut -d ":" -f 2 | tr -d '\"')
+					echo "${@}"
+				;;
+			esac
+		else
+			return 1
+		fi
+	else
+		return 1
+	fi
+
+	return 0
+}
+
+is_part_of()
+{
+	local INPUT GROUP
+
+	INPUT="${1}"
+	shift 1
+	GROUP="${@}"
+
+	[ -n "$(printf '%s\n' ${GROUP} | grep -Eo -- "^${INPUT}$")" ] && return 1
+
+	return 0
+}
+
+

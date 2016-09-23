@@ -1,0 +1,1037 @@
+#!/bin/bash
+
+strip_single_path()
+{
+	local INPUT I OUTPUT
+
+	INPUT="${@}"
+	for I in ${INPUT}
+	do
+		OUTPUT+=($(trim_slashes ${I##${VPM_PKGDIR}}))
+	done
+
+	echo ${OUTPUT[@]}
+
+	return 0
+}
+
+append_single_path()
+{
+	local INPUT I OUTPUT
+
+	INPUT="${@}"
+	for I in ${INPUT}
+	do
+		OUTPUT+=($(trim_slashes ${VPM_PKGDIR}/${I}))
+	done
+	
+	echo ${OUTPUT[@]}
+	
+	return 0
+}
+
+doprint()
+{
+	local IN OUT
+	
+	IN="${1}"
+	OUT="$(strip_single_path "${2}")"
+	
+	printf -- "${IN}\n" > $(append_single_path "${OUT}")
+	
+	return $?
+}
+
+dols()
+{
+	local INPUT
+	
+	INPUT=$(append_single_path $(strip_single_path ${@}))
+	
+	trim_slashes $(ls -1 ${INPUT})
+	
+	return 0
+}
+
+dorm()
+{
+	local OPTS INPUT IGNORE I
+
+	IGNORE="0"
+	OPTS="$(getopt -o i -l ignore -- "$@")"
+	eval set -- ${OPTS}
+	while true
+	do
+		case ${1} in
+			-i|--ignore ) IGNORE="1"  ;;
+			--          ) shift ; break ;;
+		esac
+		shift
+	done
+	INPUT="$(append_single_path $(strip_single_path ${@}))"
+	
+	for I in ${INPUT}
+	do
+		if [[ -L "${I}" || -e "${I}" ]]
+		then
+			printme -f "log" -l "${FUNCNAME}" msg_del_any "$(trim_slashes $(strip_single_path ${I}))"
+			rm -rf "$(trim_slashes ${I})"
+		else
+			if [ "${IGNORE}" == "0" ]
+			then
+				printme -f "warn" -l "${FUNCNAME}" msg_mis_file "$(trim_slashes $(strip_single_path ${I}))"
+			fi
+		fi
+	done
+	
+	return 0
+}
+
+dormdir()
+{
+	local OPTS INPUT IGNORE I
+
+	IGNORE="0"
+	OPTS="$(getopt -o i -l ignore -- "$@")"
+	eval set -- ${OPTS}
+	while true
+	do
+		case ${1} in
+			-i|--ignore ) IGNORE="1"  ;;
+			--          ) shift ; break ;;
+		esac
+		shift
+	done
+	INPUT="$(append_single_path $(strip_single_path ${@}))"
+	
+	for I in ${INPUT}
+	do
+		if [[ -L "${I}" || -e "${I}" ]]
+		then
+			printme -f log -l "${FUNCNAME}" msg_del_any "$(trim_slashes $(strip_single_path ${I}))"
+			rmdir --ignore-fail-on-non-empty "$(trim_slashes ${I})"
+		else
+			if [ "${IGNORE}" == "0" ]
+			then
+				printme -f "warn" -l "${FUNCNAME}" msg_mis_file "$(trim_slashes $(strip_single_path ${I}))"
+			fi
+		fi
+	done
+	
+	return 0
+}
+
+doln()
+{
+	#
+	# -c|--chnge cause first make directory especified inside a package
+	# then go this directory and make simbolic links here
+	#
+	
+	local OPTS CHDIR INPUT DEST ORIG BASE I
+	
+	OPTS="$(getopt -o c: -l change: -- "$@")"
+	eval set -- ${OPTS}
+	while true
+	do
+		case ${1} in
+			-c|--change ) CHDIR="${2}"  ;;
+			--          ) shift ; break ;;
+		esac
+		shift
+	done
+
+	if [[ -z "${@}" || "${#@}" -lt "2" ]]
+	then
+		printme -f "warn" -l "${FUNCNAME}" msg_mis_args 
+		return 0
+	fi
+
+	INPUT=(${@})
+	INPUT=(${INPUT[@]/${VPM_PKGDIR}/})
+		
+	if [ -z "${CHDIR}" ]
+	then
+		DEST="${INPUT[$((${#INPUT[@]}-1))]}"
+		unset INPUT[$((${#INPUT[@]}-1))]	
+		ORIG="${INPUT[@]}"
+	else
+		ORIG="${INPUT[0]}"
+		DEST="${INPUT[1]}"
+		DEST=${DEST:-.}
+	fi
+	
+	if [[ -n "${ORIG}" && -n "${DEST}" ]]
+	then
+		for I in ${ORIG}
+		do
+			log "$(gettext '%s => Linking %s to %s')" "${FUNCNAME}" "${I}" "${DEST}"
+			if [ -n "${CHDIR}" ]
+			then
+				CHDIR="$(append_single_path $(strip_single_path ${CHDIR}))"
+				[ ! -d "${CHDIR}" ] && mkdir -p "${CHDIR}"
+				( cd ${CHDIR} ; ln -sf ${I} ${DEST} )
+			else
+				case "X${DEST}" in
+					X/* )
+						# For absulte paths in ORIG
+						ln -sf ${I} $(append_single_path ${DEST})
+					;;
+					X?* )
+						# For relative paths in ORIG						
+						ORIG="$(trim_trailing ${ORIG})"
+						BASE="$(append_single_path ${ORIG%/*})"
+						ORIG="${ORIG##*/}"
+												
+						[ -d "$(trim ${BASE})" ] || mkdir -p $(trim ${BASE})
+						( cd ${BASE} ; ln -sf ${ORIG} ${DEST} )
+					;;
+				esac
+			fi
+		done
+	fi
+	
+	return 0
+}
+
+docp()
+{
+	local OPTS EXTER INPUT DEST ORIG BASE I
+
+	OPTS="$(getopt -o e -l external -- "$@")"
+	eval set -- ${OPTS}
+	while true
+	do
+		case ${1} in
+			-e|--external ) EXTER="1"  ;;
+			--            ) shift ; break ;;
+		esac
+		shift
+	done
+
+	if [[ -z "${@}" || "${#@}" -lt "2" ]]
+	then
+		printme -f "warn" -l "${FUNCNAME}" msg_mis_args 
+		return 0
+	fi
+
+	INPUT=(${@})
+	DEST="${INPUT[((${#INPUT[@]}-1))]}"
+	unset INPUT[$((${#INPUT[@]}-1))]	
+
+	if [ "${EXTER}" == "1" ]
+	then
+		ORIG="${INPUT[@]}"
+	else
+		ORIG="$(append_single_path $(strip_single_path ${INPUT[@]}))"
+	fi
+	
+	if [[ -n "${ORIG}" && -n "${DEST}" ]]
+	then
+		for I in ${ORIG}
+		do
+			if [ -e "${I}" ]
+			then
+				log "$(gettext '%s => Copying %s to %s')" "${FUNCNAME}" "$(trim_slashes $(strip_single_path ${I}))" "${DEST}"
+				case "X${DEST}" in
+					X/* )
+						# For absulte paths in ORIG
+						cp -af ${I} $(append_single_path ${DEST})
+					;;
+					X?* )
+						if [ "${EXTERN}" != "1" ]
+						then
+							# For relative paths in ORIG						
+							ORIG="$(trim_trailing ${ORIG})"
+							BASE="$(append_single_path ${ORIG%/*})"
+							ORIG="${ORIG##*/}"
+													
+							[ ! -d "${BASE}" ] && mkdir -p $(trim ${BASE})
+							( cd ${BASE} ; cp -af ${ORIG} ${DEST} )
+						fi
+					;;
+				esac
+			else
+				printme -f "error" -l "${FUNCNAME}" msg_mis_file "${I}"
+			fi
+		done
+	fi
+	
+	return 0
+}
+
+doinstall()
+{
+	local OPTS DIR MODE SILENT INPUT DEST ORIG BASE I
+
+	OPTS="$(getopt -o dm:s -l directory,mode:,external,silent -- "$@")"
+	DIR="0"
+	MODE=""
+	SILENT="0"
+	
+	eval set -- ${OPTS}
+	while true
+	do
+		case ${1} in
+			-d|--directory ) DIR="1"       ;;
+			-m|--mode      ) MODE="${2}"   ;;
+			-s|--silent    ) SILENT="1"    ;;
+			--             ) shift ; break ;;
+		esac
+		shift
+	done
+
+	INPUT=(${@})
+	case ${#INPUT[@]} in
+		0 ) printme -f "log" -l "${FUNCNAME}" msg_mis_args ; return 0 ;;
+		1 ) 
+			if [ "${DIR}" == "1" ]
+			then
+				MODE="${MODE:-0755}"
+				[ "${SILENT}" == "0" ] && log "$(gettext '%s => Installing %s directory')" "${FUNCNAME}" "${INPUT[0]}" 
+				install -D --directory --mode=${MODE} ${INPUT[0]}
+				return $?
+			else
+				printme -f "log" -l "${FUNCNAME}" msg_mis_args
+				return 0 
+			fi
+		;;
+	esac
+		
+	DEST="${INPUT[((${#INPUT[@]}-1))]}"
+	unset INPUT[$((${#INPUT[@]}-1))]	
+	ORIG="${INPUT[@]}"
+	
+	if [[ -n "${ORIG}" && -n "${DEST}" ]]
+	then
+		for I in ${ORIG}
+		do
+			if [ -e "${I}" ]
+			then
+				[ "${SILENT}" == "0" ] && printme -f "log" -l "${FUNCNAME}" msg_installing "$(trim_slashes $(strip_single_path ${I##${VPM_BUILDIR}/}))" "${DEST}"
+				case "X${DEST}" in
+					X/* )
+						# For absulte paths in DEST
+						install -D --mode=${MODE:-0644} $(trim ${I}) $(trim $(append_single_path ${DEST}))
+					;;
+					X?* )
+						# For relative paths in DEST						
+						ORIG="$(trim_trailing ${ORIG})"
+						BASE="$(append_single_path ${ORIG%/*})"
+						ORIG="${ORIG##*/}"
+													
+						[ ! -d "${BASE}" ] && mkdir -p $(trim ${BASE})
+						( cd ${BASE} ; install -D --mode=${MODE:-0644} ${ORIG} ${DEST} )
+					;;
+				esac
+			else
+				printme -f "error" -l "${FUNCNAME}" msg_mis_file "${I}"
+			fi
+		done
+	fi
+
+	return 0
+}
+
+domv()
+{
+	local OPTS LINK CHDIR INPUT DEST ORIG BASE I
+	
+	OPTS="$(getopt -o c:l -l change:,link -- "$@")"
+	LINK="0"
+	eval set -- ${OPTS}
+	while true
+	do
+		case ${1} in
+			-c|--change) CHDIR="${2}"  ;;
+			-l|-link   ) LINK="1"      ;;
+			--         ) shift ; break ;;
+		esac
+		shift
+	done
+
+	if [[ -z "${@}" || "${#@}" -lt "2" ]]
+	then
+		printme -f "warn" -l "${FUNCNAME}" msg_mis_args 
+		return 0
+	fi
+
+	INPUT=(${@})
+	INPUT=(${INPUT[@]/${VPM_PKGDIR}/})
+	
+	if [ -z "${CHDIR}" ]
+	then
+		DEST="${INPUT[((${#INPUT[@]}-1))]}"
+		unset INPUT[$((${#INPUT[@]}-1))]	
+		ORIG="${INPUT[@]}"
+	else
+		ORIG="${INPUT[@]}"
+		DEST="."
+	fi
+
+	if [[ -n "${ORIG}" && -n "${DEST}" ]]
+	then
+		DEST="$(trim_trailing $(trim_slashes ${DEST}))"
+		for I in ${ORIG}
+		do
+			I="$(trim_trailing $(trim_slashes ${I}))"
+			if [ -r "$(trim $(append_single_path ${I}))" ]
+			then
+				log "$(gettext '%s => Moving %s to %s')" "${FUNCNAME}" "${I}" "${DEST}"
+				case "X${DEST}" in
+					X/* )
+						# For absulte paths
+						mv -f $(append_single_path ${I}) $(append_single_path ${DEST})
+						[ "${LINK}" == "1" ] && ( cd $(append_single_path ${I%/*}) ; ln -sf ${DEST}/${I##*/} . )
+					;;
+					X?* )
+						# For relative paths					
+						ORIG="$(trim_trailing ${ORIG})"
+						BASE="$(append_single_path ${ORIG%/*})"
+						ORIG="${ORIG##*/}"
+												
+						[ ! -d "${BASE}" ] && mkdir -p $(trim ${BASE})
+						( cd ${BASE} ; mv -f ${ORIG} ${DEST} )
+						if [ "${LINK}" == "1" ]
+						then
+							ln -sf ${BASE}/${I##*} $(append_single_path ${I})
+						fi
+					;;
+				esac
+			else
+				printme -f "error" -l "${FUNCNAME}" msg_mis_file "${I}"
+			fi
+		done
+	fi
+	
+	return 0
+}
+
+docat()
+{
+	local I EXTER OPTS INPUT DEST ORIG BASE I
+
+	EXTER="0"
+	OPTS="$(getopt -o e -l external -- "$@")"
+	eval set -- ${OPTS}
+	while true
+	do
+		case ${1} in
+			-e|--external ) EXTER="1"  ;;
+			--            ) shift ; break ;;
+		esac
+		shift
+	done
+
+	if [[ -z "${@}" || "${#@}" -lt "2" ]]
+	then
+		printme -f "warn" -l "${FUNCNAME}" msg_mis_args 
+		return 0
+	fi
+
+	INPUT=(${@})
+	DEST="${INPUT[((${#INPUT[@]}-1))]}"
+	unset INPUT[$((${#INPUT[@]}-1))]	
+
+	if [ "${EXTER}" == "1" ]
+	then
+		ORIG="${INPUT[@]}"
+	else
+		ORIG="$(append_single_path $(strip_single_path ${INPUT[@]}))"
+	fi
+	
+	if [[ -n "${ORIG}" && -n "${DEST}" ]]
+	then
+		for I in ${ORIG}
+		do
+			if [ -e "${I}" ]
+			then
+				log "$(gettext '%s => Dumping %s to %s')" "${FUNCNAME}" "$(trim_slashes $(strip_single_path ${I}))" "${DEST}"
+				case "X${DEST}" in
+					X/* )
+						# For absulte paths in DEST
+						cat ${I} > "$(trim $(append_single_path ${DEST}))"
+					;;
+					X?* )
+						if [ "${EXTER}" == "0" ]
+						then
+							# For relative paths in ORIG						
+							ORIG="$(trim_trailing ${ORIG})"
+							BASE="$(append_single_path ${ORIG%/*})"
+							ORIG="${ORIG##*/}"
+													
+							[ ! -d "${BASE}" ] && mkdir -p $(trim ${BASE})
+							( cd ${BASE} ; cat ${ORIG} > $(trim ${DEST}) )
+						fi
+					;;
+				esac
+			else
+				printme -f "error" -l "${FUNCNAME}" msg_mis_file "${I}"
+			fi
+		done
+	fi
+	
+	return 0
+}
+
+domkdir()
+{
+	local MODE OPTS SILENT I
+	
+	MODE="0755"
+	SILENT="0"
+	OPTS="$(getopt -o m:s -l mode:silent -- "$@")"
+	eval set -- ${OPTS}
+
+	while true
+	do
+		case ${1} in
+			-m|--mode   ) MODE="${2}"  ;;
+			-s|--silent ) SILENT="1"   ;;
+			--          ) shift; break ;;
+		esac
+		shift
+	done
+  
+	for I in $(append_single_path $(strip_single_path ${@}))
+	do
+		[ "${SILENT}" == "0" ] && log "$(gettext '%s => Creating %s directory')" "${FUNCNAME}" "$(trim_slashes $(strip_single_path ${I}))"
+		install -D --directory --mode=${MODE} ${I}
+ 	done
+ 	
+ 	return 0
+}
+
+dochmod()
+{
+	local PERM OPTS I
+	
+	PERM=""
+	OPTS="$(getopt -o m: -l mode: -- "$@")"
+	eval set -- ${OPTS}
+
+	while true
+	do
+		case ${1} in
+			-m|--mode   ) PERM="${2}"  ;;
+			--          ) shift; break ;;
+		esac
+		shift
+	done
+	
+	if [ -z "${PERM}" ]
+	then
+		printme -f "warn" -l "${FUNCNAME}" msg_mis_args
+		return 0
+	fi
+	
+	for I in $(append_single_path $(strip_single_path ${@}))
+	do
+		[ "${SILENT}" == "0" ] && log "$(gettext '%s => Changing %s perms to %s')" "${FUNCNAME}" "$(trim_slashes $(strip_single_path ${I}))" "${PERM}"
+		chmod ${PERM} ${I}
+ 	done
+ 	
+ 	return 0
+}
+
+
+dotouch()
+{
+	local I
+	
+	for I in $(append_single_path $(strip_single_path ${@}))
+	do		
+		[ ! -d ${I%/*} ] && mkdir -p "$(trim_slashes ${I%/*})"
+		touch "$(trim_slashes ${I})"
+	done
+	
+	return 0
+}
+
+dostrip()
+{
+	local ARGS OPTS SNP I
+	
+	ARGS="--strip-unneeded"
+	OPTS="$(getopt -o bd -l binary,debug -- "$@")"
+	eval set -- ${OPTS}
+
+	while true
+	do
+		case ${1} in
+			-b|--binary) ARGS="--strip-unneeded" ;;
+			-d|--debug ) ARGS="--strip-debug"    ;;
+			--         ) shift; break            ;;
+		esac
+		shift
+	done
+	
+	for I in $(append_single_path $(strip_single_path ${@}))
+	do
+		[ ! -e "${I}" ] && continue
+
+		SNP="$(trim_slashes "${I##${VPM_PKGDIR}}")"
+		printme -f "log" -l "${FUNCNAME}" msg_stripping "${SNP}"
+		strip ${ARGS} ${I}
+	done
+	
+	return 0
+}
+
+exec_sys_install()
+{
+	local EXTER INTPATH NAME MODE LINK OPTS INPUT ORIG I INPUT
+
+	EXTER="0"
+	INTPATH=""
+	NAME=""
+	MODE=""
+	LINK="0"
+	OPTS="$(getopt -o c:ep:n:m:l -l caller:,external,path:,name:,mode:,link -- "$@")"
+	eval set -- ${OPTS}
+	while true
+	do
+		case ${1} in
+			-c|--caller   ) CALLER="${2}"  ;;
+			-e|--external ) EXTER="1"      ;;
+			-p|--path     ) INTPATH="${2}" ;;
+			-n|--name     ) NAME="${2}"    ;;
+			-m|--mode     ) MODE="${2}"    ;;
+			-l|--link     ) LINK="1"       ;;
+			--            ) shift ; break  ;;
+		esac
+		shift
+	done
+	
+	[ "${EXTER}" == "1" ] && LINK="0"
+	 
+	if [ -z "${INTPATH}" ]
+	then
+		printme -f "warn" -l "${CALLER}" "$(gettext 'Missing path')"
+		return 0
+	fi
+	
+	if [ -z "${MODE}" ]
+	then
+		printme -f "warn" -l "${CALLER}" "$(gettext 'Missing mode')"
+		return 0
+	fi
+	
+	CALLER="${CALLER:${FUNCNAME}}"
+	
+	INPUT=(${@})
+	if [ "${#INPUT[@]}" -lt "1" ] 
+	then
+		printme -f "warn" -l "${CALLER}" msg_mis_args 
+		return 0
+	fi
+
+	if [ "${EXTER}" == "1" ]
+	then
+		ORIG="${INPUT[@]}"
+	else
+		ORIG="$(append_single_path $(strip_single_path ${INPUT[@]}))"
+	fi
+	
+	for I in ${ORIG}
+	do
+		if [ -r "${I}" ]
+		then
+			NAME="${NAME:-${I##*/}}"
+			printme -f "log" -l "${CALLER}" msg_installing "$(strip_single_path ${I})" "${INTPATH}"
+			[ ! -d "$(append_single_path ${INTPATH})" ] && mkdir -p $(append_single_path ${INTPATH})
+
+			[ "${NAME##*.}" == "a" ] && MODE="0644"
+			if [ "${EXTER}" == "1" ]
+			then
+				install -D -m ${MODE} ${I} $(append_single_path ${INTPATH})/${NAME}
+			else
+				mv -f ${I} $(append_single_path ${INTPATH})/${NAME}
+				[ ! -L $(append_single_path ${INTPATH})/${NAME} ] && chmod ${MODE} $(append_single_path ${INTPATH})/${NAME}
+				if [ "${LINK}" == "1" ]
+				then
+					printme -f "log" -l "${CALLER}" msg_linking "${INTPATH}/${NAME}" "$(strip_single_path ${I})"
+					( cd ${I%/*} ; ln -sf ${INTPATH}/${NAME} . )
+				fi
+			fi
+			NAME=""
+		else
+			printme -f "warn" -l "${CALLER}" msg_mis_file "${I}"
+		fi
+	done
+	
+	return 0
+}
+
+dobin()
+{
+	exec_sys_install ${@} --caller="${FUNCNAME}" --mode="0755" --path="$(p_bin)"
+	
+	return 0
+}
+
+dousrbin()
+{
+
+	exec_sys_install ${@} --caller="${FUNCNAME}" --mode="0755" --path="$(p_usrbin)"
+
+	return 0
+}
+
+dosbin()
+{
+	exec_sys_install ${@} --caller="${FUNCNAME}" --mode="0755" --path="$(p_sbin)"
+	
+	return 0
+}
+
+dousrsbin()
+{
+	exec_sys_install ${@} --caller="${FUNCNAME}" --mode="0755" --path="$(p_usrsbin)"
+	
+	return 0
+}
+
+dolib()
+{
+	exec_sys_install ${@} --caller="${FUNCNAME}" --mode="0755" --path="$(p_lib)"
+	
+	return 0
+}
+
+dousrlib()
+{
+	exec_sys_install ${@} --caller="${FUNCNAME}" --mode="0755" --path="$(p_usrlib)"
+	
+	return 0
+}
+
+dopkgconfig()
+{
+	exec_sys_install ${@} --caller="${FUNCNAME}" --mode="0644" --path="$(p_pkgconfig)"
+	
+	return 0
+}
+
+doman()
+{
+	local I FILE NAME SEC
+
+	for I in ${@}
+	do
+		FILE="${I##*/}"
+		NAME="${FILE%%[-,_,.][1-8]*}"
+		SEC="${FILE##${NAME}.}"
+		SEC="${SEC%%.*}"
+
+		if [ -r "${I}" ]
+		then
+			mkdir -p ${VPM_PKGDIR}/${VPM_MANDIR}/man${SEC}
+			cat ${I} > ${VPM_PKGDIR}/${VPM_MANDIR}/man${SEC}/${FILE}
+		else
+			printme -f "warn" -l "${FUNCNAME}" msg_mis_file "${I}"
+		fi
+	done
+	
+	return 0
+}
+
+doinfo()
+{
+	local I
+
+	if [ -z "${@}" ]
+	then
+		printme -f "log" -l "${FUNCNAME}" msg_mis_args
+		return 0
+	fi
+
+	for I in ${@}
+	do
+		if [ -r "${I}" ]; then
+			mkdir -p ${VPM_PKGDIR}/${VPM_INFODIR}
+			cat ${I} > ${VPM_PKGDIR}/${VPM_INFODIR}/${I##*/}
+		else
+			printme -f "log" -l  "${FUNCNAME}" msg_mis_file "${I}"
+		fi
+	done
+
+	return 0
+}
+
+dodoc()
+{	
+	local I
+
+	if [ -z "${@}" ]
+	then
+		printme -f "log" -l "${FUNCNAME}" msg_mis_args
+		return 0
+	fi
+
+	for I in ${@}
+	do
+		if [ "x$(echo ${I} | egrep '\*')" == "x" ]
+		then			
+			if [ -r "${I}" ]; then
+				[ ! -d "${VPM_PKGDIR}/${VPM_DOCDIR}" ] && mkdir -p ${VPM_PKGDIR}/${VPM_DOCDIR}
+				cp -af ${I} ${VPM_PKGDIR}/${VPM_DOCDIR}/${I##*/}
+			else
+				printme -f "log" -l  "${FUNCNAME}" msg_mis_file "${I}"
+			fi
+		fi	
+	done
+	
+	return 0
+}
+
+dounpack()
+{
+	local COM X FILE
+
+	unset I
+	
+	if [ -z "${@}" ]
+	then
+		printme -f "die" -l "${FUNCNAME}" msg_mis_args
+		return 0
+	fi
+
+	for X in ${@}
+	do
+		FILE="${X}"
+		if [ ! -f "${FILE}" ]
+		then
+			FILE="${VPM_FILESDIR}/${FILE}"
+			if [ ! -f "${FILE}" ]
+			then
+				printme -f "die" -l "${FUNCNAME}" msg_mis_file "${X}"
+				continue
+			fi
+		fi
+
+		COM="$(archive_info --verbose --unpack ${FILE})"
+		if [ -n "${COM}" ]
+		then
+			printme -f "log" -l "${FUNCNAME}" msg_unpacking "${FILE##*/}"
+			eval I="$( ${COM} ${FILE} | gawk -F'/' '{print $1}' | sort -u )"
+			[ $? != "0" ] && printme -f "die" -l "${FUNCNAME}" msg_fail_extract "${X}"
+		else
+			die "$(gettext 'Unable to set extract command for %s file')" "${X}"
+		fi
+	done
+
+	return 0
+}
+
+ask-kernelconf()
+{
+	local INPUT IF_SET IF_NOT_SET O
+	
+	INPUT="${@}"
+	for O in ${INPUT}
+	do
+		IF_SET="$( grep -E "^${O}=" /boot/config-${VPM_KERNEL_VERSION} | awk -F= '{print $2}' )"
+		if [ "x${IF_SET}" == "x" ]
+		then
+			IF_NOT_SET="$( grep -E "^${O}[[:space:]]" /boot/config-${VPM_KERNEL_VERSION} | awk -F= '{print $2}' )"
+			if [ -z "${IF_NOT_SET}" ]
+			then
+				log "$(gettext '%s => %s kernel option not found')" "${FUNCNAME}" "${O}"
+			else
+				log "$(gettext '%s => %s kernel option is not set')" "${FUNCNAME}" "${O}"
+			fi
+		else
+			printf "${IF_SET}"
+		fi
+	done
+
+	return 0
+}
+
+ask-system()
+{
+	case "${VPM_SYSTEM}" in
+		system    ) return 0 ;;
+		toolchain ) return 1 ;;
+	esac
+	
+	return 0
+}
+
+ask-toolchain()
+{
+	declare -i BOOL="${1}"
+
+	case "x${BOOL}" in
+		x0 | x1 )
+			case ${BOOL} in
+				1 )
+					case "${VPM_SYSTEM}" in
+						toolchain )
+							VPM_TOOLCHAIN_LD="${DEF_TOOLCHAIN_LD}"
+							VPM_TOOLCHAIN_CC="${DEF_TOOLCHAIN_CC}"
+							VPM_TOOLCHAIN_CXX="${DEF_TOOLCHAIN_CXX}"
+						;;
+						* ) log "$(gettext 'This is a production system')" ;;
+					esac
+				;;
+			esac
+		;;
+		x ) printme -f "log" -l "${FUNCNAME}" msg_mis_args  ;;
+	esac
+
+	return 0
+}
+
+ask-multipack()
+{
+	return ${VPM_MULTIPACK}
+}
+
+ask-install()
+{
+	find_exactly --novar ${1}
+	return $?
+}
+
+#
+# Wrappers for new files
+#
+
+newcp()
+{
+	if [ -z "${@}" ]
+	then
+		printme -f "warn" -l "${FUNCNAME}" msg_mis_args
+		return 0
+	fi
+	
+	docp -e ${@}
+	
+	return $?
+}
+
+newfile()
+{
+	if [ -z "${@}" ]
+	then
+		printme -f "warn" -l "${FUNCNAME}" msg_mis_args
+		return 0
+	fi
+	
+	doinstall -e ${@}
+	
+	return $?
+}
+
+newdir()
+{
+	if [ "x${1}" == "x" ]
+	then
+		printme -f "warn" -l "${FUNCNAME}" msg_mis_args
+		return 0
+	fi
+	
+	domkdir ${@}
+	
+	return $?
+}
+
+doldlibs()
+{
+	local OPTS EXTER INPUT DEST ORIG BASE I
+
+	OPTS="$(getopt -o e -l external -- "$@")"
+	eval set -- ${OPTS}
+	while true
+	do
+		case ${1} in
+			-e|--external ) EXTER="1"  ;;
+			--            ) shift ; break ;;
+		esac
+		shift
+	done
+
+	if [ -z "${@}" ]
+	then
+		printme -f "warn" -l "${FUNCNAME}" msg_mis_args 
+		return 0
+	fi
+
+	if [ "${EXTER}" == "1" ]
+	then
+		TARGET="${@}"
+	else
+		TARGET="$(append_single_path $(strip_single_path ${INPUT[@]}))"
+	fi
+	
+	[ ! -e "${TARGET}" ] && return 0
+	
+	ldd -r ${TARGET} | grep -E "=>" | tr -d '\t' | sed -e 's/ =>.*//g'
+	
+	return $?
+}
+
+dopatch()
+{
+	local I
+
+	for I in ${@}
+	do
+		if ! i_patch ${I}
+		then
+			NO_APPLY+=" ${I}"
+		fi
+	done
+
+	if [ -n "${NO_APPLY}" ]
+	then
+		printme -f "die" -l "${FUNCNAME}" "$(gettext 'Failed to apply netx patches :\n%s')" "${NO_APPLY}"
+		exit 1
+	fi
+
+	return 0
+}
+
+dotest()
+{
+	[ -f "${HOME}/.cvspass" ] || touch ${HOME}/.cvspass
+
+	if [ -z "${1}" ]
+	then
+		printme -f "die" -l "${FUNCNAME}" msg_mis_args 
+		return 0
+	fi
+
+	if ! commander ${1} 
+	then
+		printme -f "die" -l ${FUNCNAME} "$(gettext '%s command not found')" "${1}"
+	fi
+
+	return 0
+}
+
+get-base()
+{
+	local SHORT I
+
+	for I in ${@}
+	do
+		SHORT+=" ${I##*/}"
+	done
+
+	printf "$(trim ${SHORT})\n"
+}
+
+get-dir()
+{
+	local DIR I
+
+	for I in ${@}
+	do
+		DIR+=" ${I%/*}"
+	done
+
+	printf "$(trim ${DIR})\n"
+}

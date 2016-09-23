@@ -1,0 +1,72 @@
+#!/bin/bash
+
+T_SIZE="$(( $(/bin/stty size | cut -d " " -f 2) - 1 ))"
+T_DEL="\e[$(( ${T_SIZE} + 1 ))G"
+
+fetch_msg()
+{
+	printf "%s %s \e[${T_SIZE}G" "${1}" "${2}"
+}
+
+print_fetch()
+{
+	grep --line-buffered "%" | sed -u -e "s,\.,,g" | awk '{printf("\b\b\b\b%4s", $2)}'
+}
+
+
+fetch()
+{
+	local OPTS INPUT URL OUT_FILE STATUS MYURL WGET_OPTIONS AND_BAR AND_IGNORE
+ 	
+	[ -n "${VPM_PKGUSERAGENT}" ] && WGET_OPTIONS+="--user-agent=\"${VPM_PKGUSERAGENT}\""
+
+	AND_BAR="1"
+	AND_IGNORE="0"
+	STATUS="0"
+	OPTS="$(getopt -o o:O:ni -l outfile:,options:,nobar,ignore -- "$@")"
+	eval set -- ${OPTS}
+	while true
+	do
+		case ${1} in
+			-o|--outfile ) OUT_FILE="${2}"  ;;
+			-n|--nobar   ) AND_BAR="0"      ;;
+			-O|--options ) WGET_OPTIONS+=" ${2}" ;;
+			-i|--ignore  ) AND_IGNORE="1" ;;
+			--           ) shift ; break ;;
+		esac
+		shift
+	done
+
+	INPUT="${@}"
+	URL="${1}"
+	OUT_FILE="${OUT_FILE:-${URL##*/}}"
+	MYURL="$(archive_info --proto ${URL})"
+	case  ${MYURL} in
+		file )
+			[[ ! -f $(archive_info --address ${URL}) && "${AND_IGNORE}" == "1" ]] && return 1
+			install -D "$(trim_slashes $(archive_info --address ${URL}))" "${OUT_FILE}"
+			STATUS="$?"
+		;;
+		http*|ftp)
+			[ "${MYURL}" == https ] && WGET_OPTIONS+=" --no-check-certificate"
+			if [ "${AND_VERBOSE}" == "1" ]
+			then
+				wget ${WGET_OPTIONS} -O ${OUT_FILE} ${URL}
+				STATUS="${?}"
+			else
+				if [ "${AND_BAR}" == "1" ]
+				then
+					wget ${WGET_OPTIONS} --progress=dot -O ${OUT_FILE} ${URL} 2>&1 | print_fetch
+					STATUS="${PIPESTATUS[0]}"
+				else
+					wget ${WGET_OPTIONS} -O ${OUT_FILE} ${URL} &>/dev/null
+					STATUS="${PIPESTATUS[0]}"
+				fi
+			fi
+		;;
+	esac
+		
+	[ "${STATUS}" == "4" ] && STATUS="0"
+	
+	return ${STATUS}
+}

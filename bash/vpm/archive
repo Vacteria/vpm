@@ -1,0 +1,257 @@
+#!/bin/bash
+
+vpm_unpack_pkg()
+{
+	#
+	# Need 2 params 
+	#
+	# 1 = File to explode (always vpm)
+	# 2 = Top dir to create pkgdir (pkg name without .vpm extension"
+	#
+	
+	FILE="${1##*/}"
+	TOPDIR="${2}"
+	[ "${#@}" -lt "2" ] && printme -f "die" msg_mis_args
+
+	PKGDIR="${TOPDIR}/${FILE%.vpm}"
+	
+	[ -d "${PKGDIR}" ] && rm -rf "${PKGDIR}"
+	mkdir -p "${PKGDIR}"
+	
+	case "${VPM_PKGTOOLS}" in
+		bsdtar ) bsdtar -C ${PKGDIR} -xf ${1} 2>/dev/null || return 1 ;;
+		tar    ) tar -C ${PKGDIR} -xf ${1} 2>/dev/null    || return 1 ;;
+	esac
+	
+	return 0
+}
+
+vpm_unpack_data()
+{
+	#
+	# Need 2 params
+	#
+	# 1 = Directory path to data.tar-xz
+	# 2 = Output directory to descompress data file
+	#
+	
+	DIR="${1}"
+	DEST="${2}"
+	[ "${#@}" -lt "2" ] && printme -f "die" msg_mis_args
+
+	[ "$(trim_slashes ${DEST})" != "/" ] && mkdir -p "${DEST}"
+
+	case "${VPM_PKGTOOLS}" in
+		bsdtar ) bsdtar -C ${DEST} -xUpf ${DIR}/data.tar${VPM_FILTER_EXT} 2>/dev/null;;
+		tar    ) tar -C ${DEST} --no-same-owner -xlf ${DIR}/data.tar${VPM_FILTER_EXT} 2>/dev/null ;;
+	esac
+	
+	return 0
+}
+
+vpm_explode_pkg()
+{
+	local FILE TOPDIR PKGDIR DATADIR DATAFILE
+
+	FILE="${1##*/}"
+	TOPDIR="${2}"
+	PKGDIR="${TOPDIR}/${FILE%.vpm}"
+
+	vpm_unpack_pkg ${1} ${TOPDIR}
+	vpm_unpack_data ${PKGDIR} ${PKGDIR}/data
+
+	return 0
+}
+
+vpm_implode_pkg()
+{	
+	local INPUT OUTPUT FILES V
+
+	INPUT="${1}"
+	OUTPUT="${2}"
+	
+	[ ! -d ${INPUT}/data ] && printme -f "die" msg_bad_formed_pkg
+	
+	find ${INPUT} -maxdepth 1 -type f -name "*.tar.*" -delete
+
+	case "${VPM_PKGTOOLS}" in
+		bsdtar )
+			bsdtar -c${VPM_FILTER_TAR}f ${INPUT}/data.tar${VPM_FILTER_EXT} - -C ${INPUT}/data . || \
+			printme -f "die" msg_fail_compress "data.tar${VPM_FILTER_EXT}"
+		;;
+		tar    )
+			tar -C ${INPUT}/data -c${VPM_FILTER_TAR}f ${INPUT}/data.tar${VPM_FILTER_EXT} . || \
+			printme -f "die" msg_fail_compress "data.tar${VPM_FILTER_EXT}"
+		;;
+	esac
+	
+	for V in setup package changelog data.tar${VPM_FILTER_EXT}
+	do
+		if [[ ! -L ${INPUT}/${V} && -f ${INPUT}/${V} ]]
+		then
+			FILES="${FILES} ${V}"
+		else
+			case ${V} in
+				data.tar${VPM_FILTER_EXT}|package ) printme -f "die" msg_bad_formed_pkg ;;
+			esac
+		fi
+	done
+	FILES="$(trim ${FILES})"
+	[ -z "${FILES}" ] && printme -f "die" msg_bad_formed_pkg
+
+	case "${VPM_PKGTOOLS}" in
+		bsdtar )
+			bsdtar -C ${INPUT} -cf ${OUTPUT} ${FILES} || printme -f "die" msg_fail_compress "${OUTPUT##*/}"
+		;;
+		tar    )
+			tar -C ${INPUT} -cf ${OUTPUT} ${FILES} || printme -f "die" msg_fail_compress "${OUTPUT##*/}"
+		;;
+	esac
+	
+	return 0
+}
+
+check_pkg_dates()
+{
+	local INPUT NAME VERSION  PKGARCH PKGNAME
+
+	INPUT="${1%/data*}"
+	[[ -n "${INPUT}" || -d "${INPUT}" || -d "${INPUT}/data" || -f "${INPUT}/package" ]] || return 0
+
+	NAME="$(read_control_field "${INPUT}/package" "NAME")"
+	VERSION="$(read_control_field "${INPUT}/package" "VERSION")"
+	PKGARCH="$(read_control_field "${INPUT}/package" "PKGARCH")"
+	
+	for VAR in "X${NAME}" "X${VERSION}" "X${PKGARCH}"
+	do
+		[ "${VAR}" == "X" ] && return 1
+	done
+
+	PKGNAME="${NAME}-${VERSION}-${PKGARCH}.vpm"
+
+	printf "${PKGNAME}"
+
+	return 0	
+}
+
+exec_ldconfig()
+{
+	local INPUT PRESERVE
+	
+	INPUT="${1%/data}"
+	
+	[ -L /sbin/ldconfig ]    && return 0
+	[ ! -d "${INPUT}/data" ] && return 1
+	[ -f ${INPUT}/data/etc/ld.so.conf ] && PRESERVE="1"
+	
+	mkdir -p ${INPUT}/data/etc
+	touch ${INPUT}/data/etc/ld.so.conf
+	
+	if ! /sbin/ldconfig -r "${INPUT}/data" 
+	then
+		return 1
+	fi
+	
+	if [ "${PRESERVE}" != "1" ]
+	then
+		rm -f ${INPUT}/data/etc/ld.so.conf || return 1
+	fi
+	
+	rm ${INPUT}/data/etc/ld.so.cache || return 1
+	rmdir --ignore-fail-on-non-empty ${INPUT}/data/etc
+	
+	return 0
+}
+
+print_content()
+{
+	local INPUT FILE
+
+	INPUT="${1%/data}/data"
+	FILE="${INPUT%/data}/package"
+
+	[[ -z "${INPUT}" || ! -d "${INPUT}" || ! -f "${FILE}" ]] && return 1
+
+	if [ "x$(egrep "^CONTENT=" ${FILE})" != "x" ]
+	then
+		sed -i -e '/^CONTENT.*:/,/^$/d' ${FILE}
+	fi
+
+cat >> ${FILE} << OTF
+CONTENT    :
+$(cd ${INPUT} ; find . | sed -e '/.keep/d' | cut -b2- | tac)
+OTF
+
+	return 0
+}
+
+extract_package()
+{
+	FILE="${1##*/}"
+	DIR="${2}"
+	case "X${DIR}" in
+		X.|X ) DIR=$(pwd) ;;
+	esac
+
+	need_be_vpm ${FILE}
+	
+	msg "$(gettext 'Unpacking "%s" package')" "${FILE}"
+
+	if ! vpm_explode_pkg "${1}" "${DIR}"
+	then
+		printme -f "die" msg_fail_extract "${FILE}"
+	fi
+	
+	return 0
+}
+
+compress_package()
+{
+	local INPUT DIR OUT PKG
+	
+	INPUT="${1}"
+
+	case "${INPUT:0:1}" in
+		/ ) DIR="${INPUT}";;
+		* ) DIR="$(trim_trailing "${PWD}/${INPUT}")";;
+	esac
+	OUT="${AND_OUTPUT:-${DIR%/*}}"
+	
+	need_be_dir "${INPUT}"
+	
+	[ ! -d "${DIR}/data"    ] && printme -f "die" msg_mis_dir "${DIR}/data"
+	[ ! -f "${DIR}/package" ] && printme -f "die" msg_mis_file "${DIR}/package"
+	need_be_dir "${DIR}/data"
+
+	PKG="$(check_pkg_dates "${DIR}")"
+	[ -z "${PKG}" ] && printme -f "die" msg_no_pkg_name
+	PKG="${OUT}/${PKG}"
+
+	case $(read_control_field ${DIR}/package "PKGTYPE") in
+		metapkg|fakepkg ) true ;;
+		* )
+			if [ -z "$(ls -1 ${DIR}/data)" ]
+			then
+				printme -f "die" "$(gettext 'Data directory for \"%s\" package is empty')" "$(read_control_field ${DIR}/package "NAME")"
+			fi
+		;;
+	esac
+	
+	if ! check_package_name "${PKG}" 
+	then
+		printme -f "die" msg_bad_pkg_name "${PKG}"
+	fi
+		 
+	msg "$(gettext 'Creating %s package')" "${PKG}"
+	if [ "${AND_LDCONFIG}" == "1" ]
+	then
+		exec_ldconfig "${DIR}" || die "$(gettext 'Failed ldconfig execution')"
+	fi
+
+	print_content "${DIR}" || die "$(gettext 'Failed package file creation')"
+	vpm_implode_pkg "${DIR}" "${PKG}" || die "$(gettext 'Failed to create %s package')" "${PKG##*/}"
+	
+	return 0
+}
+
+

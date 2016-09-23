@@ -1,0 +1,91 @@
+#!/bin/bash
+
+alias chroot='chroot ${AND_ROOT} /bin/sh -c'
+alias rchroot='\chroot ${AND_ROOT}'
+
+only_as_root()
+{
+	if [ "$(id -un)" != "root" ]
+	then
+		die "$(gettext '%s only is allowed whit root privileges')" "${1}"
+	fi
+	
+	return 0
+}
+
+need_be_file()
+{
+	local INPUT="${1}"
+	
+	[ -z "${INPUT}"   ] && printme -f "die" msg_mis_args
+	[ ! -e "${INPUT}" ] && printme -f "die" msg_mis_file "${INPUT}"
+	[ ! -f "${INPUT}" ] && printme -f "die" msg_is_not_file "${INPUT}"
+	[ "$(trim_slashes "${INPUT}")" == "/" ] && printme -f "die" msg_root_not_allow
+	
+	return 0
+}
+
+need_be_dir()
+{
+	local INPUT="${1}"
+	
+	[ -z "${INPUT}"   ] && printme -f "die" msg_mis_args
+	[ ! -e "${INPUT}" ] && printme -f "die" msg_mis_dir "${INPUT}"
+	[ ! -d "${INPUT}" ] && printme -f "die" msg_is_not_dir "${INPUT}"
+	[ "$(trim_slashes "${INPUT}")" == "/" ] && printme -f "die" msg_root_not_allow
+	
+	return 0
+}
+
+need_be_vpm()
+{
+	local INPUT
+	
+	INPUT="${1}"
+	
+	[ -z "${INPUT}"   ] && printme -f "die" msg_mis_args
+	[ ! -e "${INPUT}" ] && printme -f "die" msg_mis_file "${INPUT}"
+	[ ! -f "${INPUT}" ] && printme -f "die" msg_is_not_file "${INPUT}"
+	[ "$(trim_slashes "${INPUT}")" == "/" ] && printme -f "die" msg_root_not_allow
+
+	case $(file --mime-type ${INPUT}) in
+		*/x-tar ) check_package_name ${INPUT} || printme -f "die" msg_is_not_vpm "${INPUT}" ;;
+		*       ) printme -f "die" msg_is_not_vpm "${INPUT}" ;;
+	esac
+	
+	return 0
+}
+
+init_env()
+{
+	msg "$(gettext 'Creating vpm struct and data base')"
+	for DIR in ${VPM_HOME} ${VPM_TMP_DIR} ${VPM_CACHE_DIR} \
+		${VPM_DATA_DIR} ${VPM_SETUP_DIR} ${VPM_PKG_FILES} \
+		${VPM_CHLOG_FILES}
+	do
+		install -D -d -o root -g root -m 0755 ${DIR}
+	done
+	
+	
+	chmod 1766 ${VPM_TMP_DIR}
+	chmod 700 ${VPM_SETUP_DIR}
+	
+	if [[ -f "${VPM_DATABASE}" && "${AND_ROOT}" == "/" ]]
+	then
+		warn "$(gettext 'Exist database on / will be override')"
+		warn "$(gettext 'Do you want to continue \?')"
+		read ANSWER
+		case $(only_lower ${ANSWER}) in 
+			y*|s* ) true ;;
+			* ) 
+				msg "$(gettext 'Exiting ...')"
+				exit 1 
+			;;
+		esac 
+	fi
+	
+	vpmqdb -cf ${VPM_DATABASE} || return 1
+	
+	return 0
+}
+

@@ -1,0 +1,175 @@
+#!/bin/bash
+
+del_initscripts()
+{
+	local INIT_SCRIPTS I
+
+	rchroot insserv -h &>/dev/null || return 0
+	INIT_SCRIPTS="$(view_content "${VPM_PKG_NAME}" | \
+	sed -e '/^\/etc\/rc.d\//!d' -e 's,.*/,,' -e 's/.keep//g')"
+
+	if [ -n "${INIT_SCRIPTS}" ]
+	then
+		msg "$(gettext 'Uninstalling initscripts')"
+		for I in ${INIT_SCRIPTS}
+		do
+			insserv -rf ${I}
+		done
+	fi
+
+	return 0
+}
+
+del_content()
+{
+	local CONTENT
+
+	msg "$(gettext 'Deleting package content')"
+
+	CONTENT=( $(view_content ${VPM_PKG_NAME}) )
+ 	[ "${AND_VERBOSE}" == "1" ] && printf "%s\n" "${CONTENT[@]/#//}" | tr -s '/' | xargs -0 -r
+ 	
+ 	echo "${CONTENT[@]/#/${AND_ROOT}}" | tr -s '/' | xargs -r rm -f 2>/dev/null
+	echo "${CONTENT[@]/#/${AND_ROOT}}" | tr -s '/' | xargs -r rmdir --ignore-fail-on-non-empty 2>/dev/null
+
+	return 0
+}
+
+del_gconf()
+{
+	local C_ARRAY
+
+	C_ARRAY=( $(view_content ${INPUT}) )
+	VPM_SCHEMAS="$(printf '%s\n' ${C_ARRAY[@]} | egrep '(^|/)usr/share/gconf/.*\.schemas')"
+	VPM_ENTRIES="$(printf '%s\n' ${C_ARRAY[@]} | egrep '(^|/)etc/gconf/.*\.entries')"
+
+	if [[ -n "${VPM_SCHEMAS}" || -n "${VPM_ENTRIES}" ]]
+	then
+		update_gconf_schemas
+	fi
+
+	unset VPM_SCHEMAS VPM_ENTRIES
+}
+
+del_infofiles()
+{
+	local C_ARRAY
+
+	C_ARRAY=( $(view_content ${INPUT}) )
+	VPM_INFO="$(printf '%s\n' ${C_ARRAY[@]} | egrep '((^|/)usr/share/info|(^|/)usr/local/share/info).*(.gz|.xz|.info)')"
+
+	if [ -n "${VPM_INFO}" ]
+	then
+		update_info_pages
+	fi
+
+	unset VPM_INFO
+}
+
+delete_files()
+{
+	[ -f "${VPM_SETUP}" ] && rm -f ${VPM_SETUP}
+	[ -f "${VPM_CHANGELOG}" ] && rm -f ${VPM_CHANGELOG}
+	rm -f ${VPM_CONTROL}
+
+	return 0
+}
+
+
+remove_packages()
+{
+	if [ "${AND_BULK}" == "1" ]
+	then
+		local PKG FAIL_BULK FAIL_CONFIG
+
+		include "bulk"
+
+		bulk_test_list ${1}
+		case $? in
+			1 ) printme -f "die" msg_need_list ;;
+			2 ) printme -f "die" msg_mis_file    ${1} ;;
+			3 ) printme -f "die" msg_empty_file  ${1} ;;
+		esac
+
+		if ! bulk_test_installed ${PROC_DIRS}
+		then
+			warn "$(gettext 'The next packages is not installed :\n%s')" "${NOTFOUND_PKGS}"
+		fi
+
+		[ "${AND_ROOT}" != "/" ] && PARAM="--root=${AND_ROOT}"
+		for PKG in ${FOUND_PKGS}
+		do
+			vpm ${PARAM} --remove ${PKG} || FAIL_BULK+=" ${PKG}"
+		done
+		[ -n "${FILE_BULK}" ] && warn "$(gettex 'Failed to remove next packages :\n%s')" "${FAIL_BULK}"
+
+		exit 0
+	fi
+
+
+	for P in ${@}
+	do
+		if ! find_exactly ${P}
+		then
+			VPM_NAME="${Q_LINE[0]}"
+			VPM_PKG_NAME="${Q_LINE[0]}-${Q_LINE[1]}-${Q_LINE[2]}"
+			VPM_SETUP="${VPM_SETUP_DIR}/${VPM_PKG_NAME}"
+			VPM_CHANGELOG="${VPM_CHLOG_FILES}/${VPM_PKG_NAME}"
+			VPM_CONTROL="${VPM_PKG_FILES}/${VPM_PKG_NAME}"
+
+			if [ "${AND_FORCE}" == "0" ]
+			then
+				for N in $(read_control_field ${VPM_CONTROL} HOLDON)
+				do
+					case "${N}" in
+						remove ) die "$(gettext '%s package is holded for remove')" "${VPM_PKG_NAME}" ;;
+					esac
+				done
+			fi
+
+			msg "$(gettext 'Uninstalling %s package')" "${VPM_PKG_NAME}"
+			if [[ "${AND_SCRIPT}" == "1" && -f "${VPM_SETUP}" ]]
+			then
+				unset -f pre_remove
+				unset -f post_remove
+				. ${VPM_SETUP}
+				if commander pre_remove
+				then
+					printme -f "msg" msg_running_func "pre_remove"
+					chmod 0744 ${VPM_SETUP}
+					chroot "${VPM_SETUP##${AND_ROOT}} prerm"
+				fi
+			fi
+
+			if [ "${AND_INITRC}" == "1" ]
+			then
+				del_initscripts
+			fi
+
+			del_gconf
+			del_infofiles
+			del_content
+
+			if [[ "${AND_SCRIPT}" == "1" && -f "${VPM_SETUP}" ]]
+			then
+				if commander post_remove
+				then
+					printme -f "msg" msg_running_func "post_remove"
+					chmod 0744 ${VPM_SETUP}
+					chroot "${VPM_SETUP##${AND_ROOT}} postrm"
+				fi
+			fi
+
+			if [ "${AND_TRIGGERS}" = "1" ]
+			then
+				shot_triggers "${VPM_PKG_NAME}"
+			fi
+			delete_all_matches "${VPM_NAME}"
+			delete_files
+		else
+			printme -f "die" msg_not_installed "${P}"
+		fi
+	done
+	
+	return 0
+}

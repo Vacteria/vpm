@@ -1,0 +1,100 @@
+#!/bin/bash
+
+find_in_db()
+{
+	local INPUT MATCHES MYNAME M
+
+	unset MYFILE
+	INPUT="${1}"
+	MATCHES=$(vpmqdb -lf ${VPM_DATABASE} | gawk -F'|' '{print $1}' | grep -E -- ${INPUT})
+	
+	for MYNAME in ${MATCHES}
+	do
+		if [ "${MYNAME}" == "${INPUT}" ]
+		then
+			MYFILE=${DIR}/$(vpmqdb -sf ${VPM_DATABASE} ${MYNAME} | gawk -F'|' '{print $1"-"$2"-"$3}')
+			return 1
+		fi
+	done
+
+	return 0
+}
+
+exec_query()
+{
+	local DB DIR MODE INPUT CHAR
+
+	DB="${1}"
+	DIR="${2}"
+	MODE="${3:0:2}"
+	shift 3
+
+	INPUT="$(printf '%s' ${@})"
+	FORMAT_LIST=( $(generate_fmt_list ${DB}) )
+
+	case ${MODE} in
+		l|list   ) printf '%s\n' ${FORMAT_LIST[@]} ;;
+		s|search ) printf '%s\n' ${FORMAT_LIST[@]} | grep -E -- "${INPUT}" ;;
+		f|find   )
+			for F in ${FORMAT_LIST[@]}
+			do
+				P="${DIR}/${F}"
+				MATCHES="$(read_control_field ${P} CONTENT | grep -Es -- ${INPUT})"
+				if [ -n "${MATCHES}" ]
+				then
+cat << EOF
+${F}
+$(printf "%s\n" ${MATCHES})
+
+EOF
+				fi
+			done
+		;;
+		R|reverse )
+			for F in ${FORMAT_LIST[@]}
+			do
+				P="${DIR}/${F}"
+				RUNDEPS=( $(read_control_field ${P} RUNDEPS) )
+				if ! is_part_of ${INPUT} ${RUNDEPS[@]}
+				then
+cat << EOF
+${F}
+EOF
+				fi
+			done
+		;;
+		n|name| v|version| a|arch| r|rundeps| b|buildeps| S|shlibs| c|conflicts )
+			if ! find_in_db ${INPUT}
+			then
+				declare -A INDEX
+				local LINE KEY VAL
+				while read LINE
+				do
+						case ${LINE} in
+								CONTENT*) break ;;
+								*       )
+										KEY="$(trim ${LINE%:*})"
+										VAL="$(trim ${LINE#*:})"
+								;;
+						esac
+
+						if [[ -n "${KEY}" && -n "${VAL}" ]]
+						then
+								INDEX[${KEY}]+="${VAL}"
+						fi
+
+				done < ${MYFILE}
+				case ${MODE} in
+					n|name     ) printf '%s\n' "${INDEX[NAME]}"      ;;
+					v|version  ) printf '%s\n' "${INDEX[VERSION]}"   ;;
+					a|arch     ) printf '%s\n' "${INDEX[PKGARCH]}"   ;;
+					r|rundeps  ) printf '%s\n' "${INDEX[RUNDEPS]}"   ;;
+					b|buildeps ) printf '%s\n' "${INDEX[BUILDEPS]}"  ;;
+					S|shlibs   ) printf '%s\n' "${INDEX[SHLIBDEPS]}" ;;
+					c|conflicts) printf '%s\n' "${INDEX[CONFLICTS]}" ;;
+				esac
+			fi
+		;;
+		C|content  ) find_in_db ${INPUT} || printf '%s\n' $(read_control_field ${MYFILE} CONTENT)   ;;
+	esac
+}

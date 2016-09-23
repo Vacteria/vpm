@@ -1,0 +1,97 @@
+#!/bin/bash
+
+if ! . /etc/vpm/vpm.conf
+then
+	printf 'No %s configuration file found\n' "/etc/vpm/vpm.conf"
+	exit 1
+fi
+
+
+VPMSELF="${0}"
+VPMLIB="${VPM_VPMREPO_HOME}"
+VPMDATA="${VPM_COMMON_HOME}"
+TEXTDOMAIN="${VPMSELF##*/}"
+TEXTDOMAINDIR="${VPM_LOCALES}"
+
+RAW_INPUT="${@}"
+
+#
+# Load essential funtions
+#
+. ${VPMLIB}/messages || exit 1
+. ${VPMDATA}/shared  || exit 1
+. ${VPMDATA}/data    || exit 1
+. ${VPMLIB}/main     || exit 1
+
+include "data"
+
+#
+# Main actions
+#
+ONLY_CREATE=""
+ONLY_ADD=""
+ONLY_DELETE=""
+ONLY_UPDATE=""
+
+#
+# Modifiers
+#
+AND_MIRRORS="/etc/vpm/mirrors"
+AND_VERBOSE="0"
+AND_QUIET="0"
+AND_ORIG="."
+AND_DEST="${AND_ORIG}/dest_repo"
+AND_PACKAGE=""
+
+SHORTOPTS="cbaruho:d:p:vs"
+LONGOPTS="create,build,add,remove,update.help,orig:,dest:,packages:,verbose,quiet"
+GLOBALOPTS="$(getopt --options ${SHORTOPTS} --longoptions ${LONGOPTS} --name ${VPMSELF} -- "$@")"
+[ "$?" != "0" ] && exit >&2
+eval set -- ${GLOBALOPTS}
+
+while true
+do
+	case ${1} in
+		-c|--create   ) ONLY_CREATE="1"    ;;
+		-b|--build    ) ONLY_BUILD="1"  ;;
+		-a|--add      ) ONLY_ADD="1"   ;;
+		-r|--remove   ) ONLY_DELETE="1"    ;;
+		-u|--update   ) ONLY_UPDATE="1"     ;;
+		-h|--help     ) ONLY_HELP="1"      ;;
+		-o|--orig     ) AND_ORIG="${2}"    ;;
+		-d|--dest     ) AND_DEST="${2}"    ;;
+		-p|--package  ) AND_PACKAGE="${2}" ;;
+		-v|--verbose  ) AND_VERBOSE="1"    ;;
+		-s|--silent   ) AND_SILENT="1"     ;;
+		-- ) shift ; break                 ;;
+	esac
+	shift
+done
+FILTER_INPUT="${@}"
+
+declare -i INDEX=(
+	${ONLY_CREATE}
+	${ONLY_BUILD}
+	${ONLY_ADD}
+	${ONLY_DELETE}
+	${ONLY_UPDATE}
+	${ONLY_HELP}
+)
+case ${#INDEX[@]} in
+	1 ) true ;;
+	0 ) printme -f "die" msg_mis_args ;;
+	* ) printme -f "die" msg_too_args ;;
+esac
+
+runtime_vars
+
+if [ "${ONLY_CREATE}" == "1" ]
+then
+	create_repo
+elif [ "${ONLY_BUILD}" == "1" ]
+then
+	build_repo
+elif [ "${ONLY_HELP}" == "1" ]
+then
+	usage
+fi

@@ -1,0 +1,70 @@
+#!/bin/bash
+
+usage()
+{
+	printf "$(gettext "Usage : 
+ %s [options] [buildir]
+ 
+Options :
+ -c, --create    Create repo struct with unsorted vpm packages found
+ -b, --build     Build a vpm repo with a valid srted struct 
+ -a, --add       Add individual package(s) to a repo
+ -r, --remove    Delete individual package(s) from repo
+ -u, --update    Update indivdual package(s) from repo
+ -o, --orig      Especified origin directory
+ -d, --dest      With -c, especified output directory
+ -p, --packages  With -a,r,u set packages to process
+ -v, --verbose
+ -d, --silent
+ -h, --help
+ ")" "${VPMSELF}"
+}
+
+done_msg()
+{
+	printf "\n"
+}
+
+fail_msg()
+{
+	printf "\n"
+	die "$(gettext 'Failed to download %s')" ${1}
+}
+
+printme()
+{
+	local OPTS FUNCTION LOGER
+
+	OPTS="$(getopt -o f:l: -l function:,loger -- "${@}")"
+	eval set -- ${OPTS}
+	while true
+	do
+		case ${1} in
+			-f|--function) FUNCTION="${2}" ;;
+			-l|--loger   ) LOGER="${2}"    ;;
+			--           ) shift; break    ;;
+		esac
+		shift
+	done
+	[ -n "${LOGER}" ] && LOGER="${LOGER} => "
+	
+	FUNCTION="${FUNCTION:-log}"	
+	case "${FUNCTION}" in
+		msg|warn|error|die|debug|log|sys) true ;;
+		* ) printf "$(gettext 'Invalid "%s" function')\n" "${FUNCTION}" ;;
+	esac
+	MESSAGE="${1}"
+	shift 1
+
+	case ${MESSAGE} in
+		msg_mis_args       )  ${FUNCTION} "${LOGER}$(gettext 'Missing arguments')" ;;
+		msg_too_args       )  ${FUNCTION} "${LOGER}$(gettext 'Too many arguments')" ;;
+		msg_mis_file       )  ${FUNCTION} "${LOGER}$(gettext 'Missing %s file')" ${1} ;;
+		msg_mis_dir        )  ${FUNCTION} "${LOGER}$(gettext 'Missing %s directory')" ${1} ;;
+		msg_fail_load      )  ${FUNCTION} "${LOGER}$(gettext 'Failed to load "%s" file')" ${1} ;;
+		msg_mis_stack      )  ${FUNCTION} "${LOGER}$(gettext 'No directory to back found')" ;;
+		*                  )  ${FUNCTION} "${LOGER}${MESSAGE}" ${@} ;;
+	esac
+	
+	return 0
+}

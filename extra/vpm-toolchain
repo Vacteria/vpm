@@ -1,0 +1,974 @@
+#!/bin/bash
+
+set +o posix
+shopt -s expand_aliases
+
+alias exec_chroot='chroot "${ROOTFSDIR}" /toolchain/bin/env PATH=/bin:/usr/bin:/sbin:/usr/sbin:/toolchain/bin /toolchain/bin/bash --login +h'
+
+if builtin command -v gettext >/dev/null
+then
+	alias gettext='gettext -e'
+else
+	alias gettetx='printf %s'
+fi
+
+ERROR="$(gettext 'ERROR')"
+WARN="$(gettext 'WARN')"
+
+die()
+{
+	INPUT="${1}"
+	shift 1
+	
+	case ${INPUT} in
+		conf ) printf "$(gettext 'Failed to config "%s" sources')\n" "${NAME}";;
+		make ) printf "$(gettext 'Failed to make "%s" sources')\n" "${NAME}";;
+		inst ) printf "$(gettext 'Failed to install "%s" sources')\n" "${NAME}";;
+		* )    printf "${INPUT}\n" "${@}" ;;
+	esac
+	
+	exit 1
+}
+
+msg()
+{
+	INPUT="${1}"
+	shift 1
+	
+	printf "${INPUT}\n" "${@}"
+	
+	return 0
+}
+
+debug()
+{
+	INPUT="${1}"
+	shift 1
+	
+	[ "${DEBUG}" == "True" ] && printf "${INPUT}\n" "${@}"
+	
+	return 0
+}
+
+error()
+{
+	INPUT="${1}"
+	
+	shift 1
+	
+	printf "${ERROR} : ${INPUT}\n" "${@}"
+	
+	return 0
+}
+
+warn()
+{
+	INPUT="${1}"
+	
+	shift 1
+	
+	printf "${WARN} : ${INPUT}\n" "${@}"
+	
+	return 0
+}
+
+trim_slashes()
+{
+	builtin echo ${@} | tr -s '/'
+	
+	return $?
+}
+
+trim()
+{
+	builtin echo ${@}
+	
+	return 0
+}
+
+ask_secure()
+{
+	#
+	# 0 = Input is NOT empty or NOT /
+	# 1 = Input is empty or "/"
+	#
+	
+	[ -z "${1}" ] && return 1
+	
+	[[ -d "${1}" && "$(trim_slashes ${1})" != "/" ]] && return 0
+	
+	return 1
+}
+
+only_as_root()
+{
+	[ "$(id -un)" != "root" ] && die "$(gettext 'Option "%s" need root privileges')" "${1}"
+	return 0
+}
+
+only_as_user()
+{
+	[ "${ASROOT}" == "True" ] && return 0
+	[ "$(id -un)" != "${USER}" ] && die "$(gettext 'Option "%s" only run as "%s" user')" "${1}" "${USER}"
+	return 0
+}
+
+usage()
+{
+printf "$(gettext '
+ Description :
+  %s is a tool for build %s GNU/linux toolchain
+ 
+ Usage :
+  %s [OPTION] [MODIFIER] [SCRIPTS]
+  
+ OPTIONS : 
+ build     Build complete toolchain
+ resume    Resume previus compilation
+ config    Configure host system
+ tools     Test host needed tools
+ setup     Setup chroot environment
+ start     Start chroot environment
+ stop      Stop chroot enviroment
+ clean     Clean previus residual compilations
+ test      Only test all build scripts
+ get       Only download all sources and patches
+ help      Show this help and quit
+ 
+ MODIFIERS :
+ --debug   Run on verbose mode from debug
+ --notest  No test scripts on build or resume process
+ --noget   Dont try to download sources and patches
+ 
+')\n" "${TEXTDOMAIN}" "${DISTRO}" "${TEXTDOMAIN}"
+
+	return 0
+}
+
+commander()
+{
+	builtin command -v "${1}" >/dev/null
+	
+	return $?
+}
+
+mpoint()
+{
+	#
+	# Return codes
+	#
+	# 0 = Directory is a mountpoint
+	# 1 = Directory is NOT mountpoint or /proc/mounts not found
+	#
+	
+	local LINE FIELDS MODE DIR
+	
+	case ${1} in
+		-s | --silent ) MODE="silent" ; shift ;;
+	esac	
+	DIR="${1}"
+
+	[[ -f /proc/mounts || -x "${DIR}" || -d "${DIR}" ]] || return 1
+
+	while read LINE
+	do
+		if [ "$(echo ${LINE} | awk '{print $2}')" == "${DIR}" ]
+		then
+			if [ "${MODE}" == "silent" ]
+			then
+				return 0
+			else
+				msg "$(gettext '%s is a mountpoint')" "${DIR}"
+				return 0
+			fi
+		fi
+	done < /proc/mounts
+
+	if [ "${MODE}" == "silent" ]
+	then
+		return 1
+	else
+		msg "$(gettext '%s is NOT a mountpoint')" "${DIR}"
+		return 1
+	fi	
+}
+
+setup_chroot()
+{
+	local M MOUNTED
+	
+	only_as_root "setup"
+	
+	for M in dev/pts dev/shm dev proc sys 
+	do
+		if mpoint --silent ${ROOTFSDIR}/${M}
+		then
+			MOUNTED="${MOUNTED} ${M}"
+		fi
+	done
+	
+	if [ -n "${MOUNTED}" ]
+	then
+		error "$(gettext 'The next filesystems is mounted. Please umount them before setup chroot')"
+		printf "%s\n" ${MOUNTED}
+		exit 1
+	fi
+	
+	if [ -r "${ROOTFSDIR}/etc/toolchain" ] 
+	then
+		msg "$(gettext 'This toolchain is allready configured on "%s" date')" "$(cat ${ROOTFSDIR}/etc/toolchain)"
+		return 0
+	fi
+	
+	mkdir -p ${ROOTFSDIR}/{run,dev,proc,sys,etc,bin,sbin,lib,usr/{bin,sbin,lib},var/log}
+	install -d -m 0700 ${ROOTFSDIR}/root
+	install -d -m 1777 ${ROOTFSDIR}/tmp
+	chown -R root:root ${ROOTFSDIR}/*
+	
+cat > ${ROOTFSDIR}/usr/bin/makelinks <<EOF
+ln -sf /toolchain/bin/{bash,cat,echo,pwd,stty,getopt} /bin
+ln -sf /toolchain/bin/{sqlite3,wget,gettext} /usr/bin
+ln -sf /toolchain/bin/perl /usr/bin
+ln -sf /toolchain/lib/libgcc_s.so{,.1} /usr/lib
+ln -sf /toolchain/lib/libstdc++.so{,.6} /usr/lib
+sed 's/toolchain/usr/' /toolchain/lib/libstdc++.la > /usr/lib/libstdc++.la
+ln -sf bash /bin/sh
+
+if [[ -L /sbin/ldconfig || ! -r /sbin/ldconfig ]]
+then
+	ln -sf /toolchain/sbin/ldconfig /sbin
+fi
+
+ln -sf /proc/mounts /etc/mtab
+ln -sf /run /var/run
+ln -sf /run/lock /var/lock
+if [ ! -r /var/run/utmp ]
+then
+	touch /var/run/utmp 
+	chgrp utmp /var/run/utmp 
+	chmod 664 /var/run/utmp 
+fi
+
+touch /var/log/{btmp,lastlog,wtmp}
+chgrp utmp /var/log/lastlog
+chmod 664 /var/log/lastlog
+touch /etc/vacteria-release
+chmod -v 600 /var/log/btmp
+EOF
+
+if [ ! -r ${ROOTFSDIR}/sbin/nologin ]
+then
+cat > ${ROOTFSDIR}/etc/passwd <<EOF
+root:x:0:0:root:/root:/bin/bash
+bin:x:1:1:bin:/dev/null:/bin/false
+nobody:x:99:99:Unprivileged User:/dev/null:/bin/false
+EOF
+
+cat > ${ROOTFSDIR}/etc/group <<EOF
+root:x:0:
+bin:x:1:
+sys:x:2:
+kmem:x:3:
+tty:x:4:
+tape:x:5:
+daemon:x:6:
+floppy:x:7:
+disk:x:8:
+lp:x:9:
+dialout:x:10:
+audio:x:11:
+video:x:12:
+utmp:x:13:
+usb:x:14:
+cdrom:x:15:
+mail:x:16:
+shadow:x:17:
+wheel:x:18:
+uucp:x:19:
+plugdev:x:20:
+netdev:x:21:
+powerdev:x:22:
+nogroup:x:99:
+EOF
+fi
+
+cat > ${ROOTFSDIR}/etc/resolv.conf <<EOF
+nameserver 8.8.8.8
+nameserver 8.8.4.4
+EOF
+
+	chmod 755 ${ROOTFSDIR}/usr/bin/makelinks
+	exec_chroot /usr/bin/makelinks
+	exec_chroot -c "rm -f /usr/bin/makelinks"
+	
+	if [ -d ${FILESDIR}/vpm ]
+	then
+		if [[ ! -f "${ROOTFSDIR}/etc/vpm/vpm.conf" || ! -r "${ROOTFSDIR}/usr/bin/vpm" ]]
+		then
+			cp -avf ${FILESDIR}/vpm/* ${ROOTFSDIR}
+		fi
+	fi
+	
+	echo "$(date +%c)" > ${ROOTFSDIR}/etc/toolchain
+	
+	return 0
+}
+
+config_host()
+{
+	only_as_root "config"
+	
+	local DIR
+	
+	if ! getent group users >/dev/null
+	then
+		debug "$(gettext 'Creating "%s" group')" "users"
+		groupadd users || die "$(gettext 'Failed to create "%s" group')" "users"
+	else
+		debug "$(gettext 'Group %s allready exist')" "users"
+	fi
+	if [ -n "${PASSWD}" ]
+	then
+		debug "$(gettext 'Setting up "%s" password')" "${USER}"
+		echo "${USER}:${PASSWD}" | chpasswd || die "$(gettext 'Failed to set passwd')"
+	fi
+	
+	if ! getent passwd ${USER} >/dev/null
+	then
+		debug "$(gettext 'Creating "%s" user')" "${USER}"
+		useradd -m -k /dev/null -s /bin/bash -d ${HOME} -G users ${USER} || die "$(gettext 'Failed to create "%s" user')" "${USER}"
+	else
+		debug "$(gettext 'User "%s" allready exist')" "${USER}"
+	fi
+
+	chown -R ${USER}:users ${HOME}
+	chmod 1770 ${HOME}
+	for DIR in ${SRCDIR} ${PATCHDIR} ${LOGDIR} ${SCRIPTDIR} \
+	${ROOTFSDIR}/toolchain ${FILESDIR} ${ARCHIVEDIR} ${TMPDIR}
+	do
+		debug "$(gettext 'Installing "%s" directory')" "${DIR}"
+		install -d -o ${USER} -g users -m 0775 ${DIR} || die "$(gettext 'Failed to create "%s" directory')" "${DIR}"
+	done
+	
+	cat > ${HOME}/.bash_profile << "EOF"
+exec env -i HOME=$HOME TERM=$TERM PS1='\u:\w\$ ' /bin/bash
+EOF
+
+	cat > ${HOME}/.bashrc << EOF
+set +h
+umask 022
+LC_ALL=POSIX
+ROOTFSDIR=${ROOTFSDIR}
+DIST_TGT=${TRIPLET}
+PATH=/toolchain/bin:/bin:/usr/bin
+export LC_ALL ROOTFSDIR DIST_TGT PATH
+EOF
+
+	chown ${USER}.users ${HOME}/.bash{_profile,rc}
+	
+	[ -L /toolchain ] && rm -f /toolchain
+	ln -sf ${ROOTFSDIR}/toolchain /
+	
+	return 0
+}
+
+start_chroot()
+{
+	only_as_root "start"
+	
+	local DIR
+	
+	msg "$(gettext 'Starting chroot enviroment')"
+	for DIR in proc sys dev
+	do
+		[ -d "${ROOTFSDIR}/${DIR}" ] && mkdir -p ${ROOTFSDIR}/${DIR} 
+		if ! mpoint --silent ${ROOTFSDIR}/${DIR}
+		then
+			debug "$(gettext 'Mounting %s filesystem')" "${DIR}"
+			case ${DIR} in
+				proc ) CMD="-t proc proc"   ;;
+				sys  ) CMD="-t sysfs sysfs" ;;
+				dev  ) CMD="-o bind /dev"   ;;
+			esac
+			
+			[ -n "${CMD}" ] && mount ${CMD} ${ROOTFSDIR}/${DIR} || die "$(gettext 'Failed to mount "/%s"')" "${DIR}"
+		fi
+	done
+	
+	if [ -d "${ROOTFSDIR}/toolchain" ]
+	then
+		chroot "${ROOTFSDIR}" /toolchain/bin/env -i HOME=/root TERM="$TERM" PS1='\u:\w\$ ' PATH=/bin:/usr/bin:/sbin:/usr/sbin:/toolchain/bin /toolchain/bin/bash --login +h
+	else
+		chroot "${ROOTFSDIR}" env -i HOME=/root TERM="$TERM" PS1='\u:\w\$ ' PATH=/bin:/usr/bin:/sbin:/usr/sbin /bin/bash --login +h
+	fi
+	
+	return 0
+}
+
+stop_chroot()
+{
+	only_as_root "stop"
+
+	local DIR P
+
+	msg "$(gettext 'Stoping chroot enviroment')"
+	for DIR in proc sys dev tmp run var/tmp
+	do
+		if mpoint --silent ${ROOTFSDIR}/${DIR}
+		then
+			debug "$(gettext 'Umounting %s directory')" "/${DIR}"
+			if ! umount ${ROOTFSDIR}/${DIR} 2>/dev/null
+			then
+				debug "$(gettext 'Trying to Kill any process using "%s"')" "/${DIR}"
+				for P in $(fuser -m ${ROOTFSDIR}/${DIR})
+				do
+					echo "kill -TERM ${P} 2>/dev/null"
+				done
+				debug "$(gettext 'Trying to umount "%s" again')" "/${DIR}"
+				umount ${ROOTFSDIR}/${DIR} 2>/dev/null || die "$(gettext 'Failed to umount "%s"')" "/${DIR}"
+			fi
+		else
+			debug "$(gettext 'Skiping umounted "%s" directory')" "/${DIR}"
+		fi
+	done
+	
+	return 0
+}
+
+clean_build()
+{
+	only_as_root "clean"
+
+	for M in dev/pts dev/shm dev proc sys 
+	do
+		if mpoint --silent ${ROOTFSDIR}/${M}
+		then
+			MOUNTED="${MOUNTED} ${M}"
+		fi
+	done
+	
+	if [ -n "${MOUNTED}" ]
+	then
+		error "$(gettext 'The next filesystems is mounted. Please umount them before clean')"
+		printf "%s\n" ${MOUNTED}
+		exit 1
+	fi
+	
+	if ask_secure ${TMPDIR}
+	then
+		if [ -d "${TMPDIR}" ]
+		then
+			msg "$(gettext 'Deleting all temporal files')"
+			find ${TMPDIR}/ -mindepth 1 -exec rm -rf {} \;  || exit 1
+		fi
+	fi
+	
+	if ask_secure ${LOGDIR}
+	then
+		if [ -d "${LOGDIR}" ]
+		then
+			msg "$(gettext 'Deleting all exist logs')"
+			find ${LOGDIR}/ -mindepth 1 -exec rm -rf {} \;  || exit 1
+		fi
+	fi
+		
+	if ask_secure ${ROOTFSDIR}
+	then
+		if [ -d "${ROOTFSDIR}" ]
+		then
+			msg "$(gettext 'Deleting rootfsdir content')"
+			find ${ROOTFSDIR} -mindepth 1 -print0 | xargs -0 rm -rf || exit 1
+		fi
+	fi
+	
+	install -d ${ROOTFSDIR}/toolchain -o ${USER} -g users -m 775
+	[ -L /toolchain ] && rm -f /toolchain
+	ln -sf ${ROOTFSDIR}/toolchain /
+		
+	return 0
+}
+
+check_tools()
+{
+	[ "${CHECKTOOLS}" == "False" ] && return 0
+	
+	for BIN in bash xz ld yacc awk gcc grep gzip bzip2 cat \
+		m4 make patch sed tar
+	do
+		REP="${BIN}"
+		case ${BIN} in
+			yacc ) REP="bison" ;;
+			cat  ) REP="coreutils" ;;
+		esac
+		
+		if commander ${BIN}
+		then
+			debug "$(gettext '"%s" package found')" "${REP}"
+		else
+			debug "$(gettext '"%s" package not found')" "${REP}"
+			FAILED="${FAILED} ${REP}"
+		fi
+	done
+		
+	[ -n "${FAILED}" ] && die "$(gettext 'Missing packages\n%s')" "${FAILED}"
+
+	return 0
+}
+
+run_test()
+{
+	[ "${RUNTEST}" == "1" ] && return 1
+
+	return 0
+}
+
+parse_options()
+{
+	[ -z "${DISTRO}" ] && DISTRO="lfs"
+	[ -z "${USER}"    ] && USER="lfs"
+	[ -z "${HOME}"   ] && HOME="/home/${USER}"
+	[ -z "${SRCDIR}" ] && SRCDIR="${HOME}/sources"
+	[ -z "${PATCHDIR}" ] && PATCHDIR="${HOME}/patches"
+	[ -z "${LOGDIR}" ] && LOGDIR="${HOME}/logs"
+	[ -z "${SCRIPTDIR}" ] && SCRIPTDIR="${HOME}/scripts"
+	[ -z "${ROOTFSDIR}" ] && ROOTFSDIR="${HOME}/rootfs"
+	[ -z "${FILESDIR}" ] && FILESDIR="${HOME}/files"
+	[ -z "${ARCHIVEDIR}" ] && ARCHIVEDIR="${HOME}/toolsets"
+	[ -z "${TMPDIR}" ] && TMPDIR="${HOME}/tmp"
+	[ -z "${RUNTEST}" ] && RUNTEST="0"
+
+	for VAR in "${HOME}" "${SRCDIR}" "${PATCHDIR}" "${LOGDIR}" "${SCRIPTDIR}" \
+		"${ROOTFSDIR}" "${FILESDIR}" "${ARCHIVEDIR}" "${TMPDIR}"
+	do
+		[ "$(trim_slashes ${VAR})" == "/" ] && die "$(gettext 'Inaporpiate values on man settings')"
+	done
+
+	case "$(uname -m)" in
+		x86_64 | i?86 ) REALARCH="$(uname -m)" ;;
+		* ) die "$(gettext 'Unsupported "%s" architecture')" "$(uname -m)"
+	esac
+
+	[ -z "${TRIPLET}" ] && TRIPLET="${REALARCH}-${DISTRO}-linux-gnu"
+
+	if [ "$(trim_slashes ${ROOTFSDIR})" == "/" ]
+	then
+		die "$(gettext 'Unable to use "%s" as rootdir')" "/"
+	else
+		ROOTFSDIR="$(trim_slashes ${ROOTFSDIR})"
+	fi
+
+	return 0
+}
+
+generate_list()
+{
+	find ${SCRIPTDIR}/ ! -type d -name "*.sh" | grep -E ".*/[[:digit:]].*.sh$" | sort -n 2>/dev/null
+}
+
+reset_vars()
+{
+	NAME=""
+	HOOK=""
+	VERSION=""
+	SOURCES=""
+	PATCHES=""
+
+	unset WRKDIR
+	unset exec_hook
+	unset exec_build
+	
+	return 0
+}
+
+evaluate_scripts()
+{		
+	local INPUT I
+	[ "${TESTSH}" == "False" ] && return 0
+	
+	INPUT="${@}"
+	[ -z "${INPUT}" ] && die "$(gettext 'No scripts for evaluation')"
+
+	for I in ${INPUT}
+	do
+		debug "$(gettext 'Validating "%s" script')" "${I##*/}"
+		I="${SCRIPTDIR}/${I##${SCRIPTDIR}/}"
+		if [ ! -f "${I}" ]
+		then
+			NOTFOUND="${NOTFOUND} ${I}"
+		else
+			reset_vars
+			. ${I} 2>/dev/null || ERRORS="${ERRORS} ${I##*/}"
+			if [ "${HOOK}" == "1" ]
+			then
+				commander exec_hook || MISHOOK="${MISHOOK} ${I##*/}"
+			else
+				[ -z "${NAME}"    ] && NONAME="${NONAME} ${I##*/}"
+				[ -z "${VERSION}" ] && NOVER="${NOVER} ${I##*/}" 
+				[ -z "${SOURCES}" ] && NOSRC="${NOSRC} ${I##*/}"
+				commander exec_build || MISBUILD="${MISBUILD} ${I##*/}"
+			fi
+		fi
+	done
+
+	[ "x${NOTFOUND}" != "x" ] && msg "$(gettext '%s : The next scripts not found\n%s')" "ERROR" "${NOTFOUND}" 
+	[ "x${ERRORS}" != "x" ]   && msg "$(gettext '%s : The next scripts have bad code\n%s')" "ERROR" "${ERRORS}" 
+	[ "x${MISHOOK}" != "x" ]  && msg "$(gettext '%s : Hooks whitout exec_hook function\n%s')" "ERROR" "${MISHOOK}" 
+	[ "x${NONAME}" != "x" ]   && msg "$(gettext '%s : Missing NAME variable on next scripts\n%s')" "ERROR" "${ERRORS}" 
+	[ "x${NOVER}" != "x" ]    && msg "$(gettext '%s : Missing VERSION variable on next scripts\n%s')" "ERROR" "${ERRORS}" 
+	[ "x${NOSRC}" != "x" ]    && msg "$(gettext '%s : Missing SOURCES variable on next scripts\n%s')" "ERROR" "${ERRORS}" 
+
+	[[ -n "${NOTFOUND}" || -n "${ERRORS}" || -n "${MISHOOK}" || -n "${NONAME}" || -n "${NOVER}" || -n "${NOSRC}" ]] && return 1
+	
+	return 0
+}
+
+download_sources()
+{
+	local INPUT I X Z FAILED
+	[ "${GETSRC}" == "False" ] && return 0
+	
+	INPUT="${@}"
+	for I in ${INPUT}
+	do
+		I="${SCRIPTDIR}/${I##${SCRIPTDIR}/}"
+		S="${I##*/}"
+		
+		reset_vars
+		. ${I}
+		
+		for X in ${SOURCES}
+		do
+#			if [ -f "${SRCDIR}/${X##*/}" ]
+#			then
+#				debug "$(gettext '%s => %s file alrready exist')" "${I##*/}" "${X##*/}"
+#			else
+				debug "$(gettext 'retriving %s file')" "${X}"
+				if ! wget -c -O ${SRCDIR}/${X##*/} ${X}
+				then
+					warn "$(gettext 'Failed to download "%s" source')" "${X##*/}"
+					FAILED="${FAILED} ${I##*/}"
+				fi
+#			fi
+		done
+		
+		for Z in ${PATCHES}
+		do
+#			if [ -f "${PATCHDIR}/${Z##*/}" ]
+#			then
+#				debug "$(gettext '%s => %s patch alrready exist')" "${I##*/}" "${Z##*/}"
+#			else
+				if ! wget -c -O ${PATCHDIR}/${Z##*/} ${Z}
+				then
+					warn "$(gettext 'Failed to download "%s" patch')" "${Z##*/}"
+					FAILED="${FAILED} ${I##*/}"
+				fi
+#			fi
+		done
+	done
+	
+	if [ -n "${FAILED}" ]
+	then
+		msg "$(gettext '%s : Failed to download some files from\n%s')" "${ERROR}" "${FAILED}"
+		return 1
+	fi
+	
+	return 0
+}
+
+get_sources()
+{
+	only_as_user "get"
+	msg "$(gettext 'Downloading all sources and patchs')"
+	
+	SCRIPTS="${@}"
+	[ -z "${SCRIPTS}" ] && SCRIPTS="$(generate_list)"
+	
+	evaluate_scripts ${SCRIPTS} || exit 1
+	download_sources ${SCRIPTS} || exit 1
+	
+	return 0
+}
+
+test_scripts()
+{
+	only_as_user "test"
+	msg "$(gettext 'Testing build scripts')"
+
+	SCRIPTS="${@}"
+	[ -z "${SCRIPTS}" ] && SCRIPTS="$(generate_list)"
+	evaluate_scripts ${SCRIPTS} || exit 1
+	
+	return 0
+}
+
+test_host_tools()
+{
+	msg "$(gettext 'Testing host tools')"
+
+	if check_tools
+	then
+		msg "$(gettext 'Found all needed host tools')"
+	fi
+	
+	return 0
+}
+
+test_instances()
+{
+	[ -f "${TMPDIR}/lockfile" ] && die "$(gettext 'Another instance of "%s" is running')" "${0}"
+	
+	return 0
+}
+
+apply_patch()
+{	
+
+	[ -z "${1}" ] && return 1
+	
+	if ! patch --quiet --batch --forward --strip=0 --input=${1} 
+	then
+		for N in $(seq 1 30)
+		do
+			if patch --quiet --batch --forward --strip=${N} --input=${1}
+			then
+				return 0
+			fi
+		done
+	else
+		return 0
+	fi
+	
+	return 1
+}
+
+build_script()
+{
+	local FILE SRCFILE DIFF
+	
+	[ -z "${1}" ] && return 0
+	
+	reset_vars
+	. ${1}
+	
+	FILE="${1##*/}"
+	
+	if [ "${HOOK}" == "1" ]
+	then
+		msg "$(gettext 'Runnning "%s" hook')" "${FILE}"
+		exec_hook || return 1
+	else
+		msg "$(gettext 'Runnning "%s" script')" "${FILE}"
+		set -- ${SOURCES}
+		SRCFILE="${1}"
+		WRKDIR="${TMPDIR}/$(tar -C ${TMPDIR} -xvf ${SRCDIR}/${SRCFILE##*/} | awk -F/ '{print $1}' | uniq)"
+		[ "$?" != "0" ] && return 2
+		if [ -d "${WRKDIR}" ]
+		then
+			echo "${WRKDIR}" > ${TMPDIR}/wrkdir
+			cd ${WRKDIR}
+			for P in ${PATCHES}
+			do
+				case "${P:0:1}" in
+					! | - ) continue ;;
+				esac
+				DIFF="${PATCHDIR}/${P##*/}"
+				if [ ! -f "${DIFF}" ]
+				then
+					error "$(gettext '%s patch not found')" "${DIFF}"
+					return 3
+				fi
+				if ! apply_patch ${DIFF}
+				then
+					error "$(gettext 'Failed to apply %s patch')" "${DIFF}"
+					return 4
+				fi
+			done
+			exec_build || return 5
+		else
+			return 6
+		fi
+	fi
+	
+	return 0
+}
+
+process_scripts()
+{
+	local FAIL FILE INPUT
+	
+	INPUT="${@}"
+	FAIL="False"	
+
+	for FILE in ${INPUT}
+	do
+		SHORT="${FILE##*/}"
+		FILE="${SCRIPTDIR}/${FILE##${SCRIPTDIR}}"
+		echo '### START BUILD ###'  > ${LOGDIR}/${SHORT//.sh/.log}
+		build_script ${FILE} 2>&1 | tee -a ${LOGDIR}/${SHORT//.sh/.log}		
+		RETURN="${PIPESTATUS[0]}"
+		[ "${RETURN}" != "0" ] && FAIL="True"
+		WRKDIR="$(cat ${TMPDIR}/wrkdir 2>/dev/null)"
+		case "${RETURN}" in
+			0 ) echo '### FINISH BUILD ###' >> ${LOGDIR}/${SHORT//.sh/.log} ;;
+			1 ) error "$(gettext 'Failed to run "%s" script')" "${SHORT}" ;;
+			2 ) error "$(gettext 'Failed to extract source from "%s"')" "${SHORT}" ;;
+			3 ) error "$(gettext 'Missing patches from "%s"')" "${SHORT}" ;;
+			4 ) error "$(gettext 'Failed to apply patches from "%s"')" "${SHORT}" ;;
+			5 ) error "$(gettext 'Failed to run build process from "%s"')" "${SHORT}" ;;
+			6 ) error "$(gettext 'Unable to find work directory from "%s"')" "${SHORT}" ;;
+		esac
+		[[ -n "${WRKDIR}" && -d "${WRKDIR}" && "${WRKDIR}" != "${TMPDIR}" ]] && ask_secure "${WRKDIR}" && rm -rf "${WRKDIR}"
+		[ -f "${TMPDIR}/wrkdir" ] && rm -f "${TMPDIR}/wrkdir"
+		[ -f "${TMPDIR}/lockfile" ] && rm -f "${TMPDIR}/lockfile"
+		
+		[ "${FAIL}" == "True" ] && exit 1 
+	done
+	
+	return 0
+}
+
+build_system()
+{
+	local FILE SCRIPTS FAIL RETURN N
+	
+	only_as_user "build"
+	
+	test_instances
+	
+	SCRIPTS="${@}"
+	if [ -z "${SCRIPTS}" ]
+	then
+		msg "#### $(gettext 'Building toolchain')"
+		SCRIPTS="$(generate_list)"
+		
+		if [[ -n "$(ls ${TMPDIR}/)" || -n "$(ls ${LOGDIR})" || -n "$(ls ${ROOTFSDIR} --ignore=toolchain)" ]]
+		then
+			msg "####$(gettext 'Previus build enviroment found. Please, use "%s" as root first')" "${0} clean"
+			exit 0
+		fi
+	else
+		SCRIPTS="${@}"
+		msg "#### $(gettext 'Building scripts :')" 
+		printf " %s\n" ${SCRIPTS}
+		msg "####"
+	fi
+	
+	msg "#### $(gettext 'Testing all scripts')"
+	evaluate_scripts ${SCRIPTS} || exit 1
+		
+	msg "#### $(gettext 'Retriving all sources and patches')"
+	download_sources ${SCRIPTS} || exit 1
+
+	msg "#### $(gettext 'Processing scripts')"
+	process_scripts ${SCRIPTS} || exit 1
+
+	return 0
+}
+
+resume_build()
+{
+	local LOGS INDEX LOG FILE REP
+	
+	only_as_user "resume" 
+	test_instances
+	
+	LOGS=($(ls -1 ${LOGDIR}/ | grep -E "^[[:digit:]].+\.log" | sort -n))
+	INDEX="$((${#LOGS[@]} -1))"
+	[ "${INDEX}" -eq "0" ] && die "$(gettext 'Nothing to resume. Please, use "build"')"
+
+	for I in $(seq 0 ${INDEX} | tac)
+	do
+		LOG="${LOGDIR}/${LOGS[${I}]}"
+		FILE="${LOGS[${I}]//.log/.sh}"
+		
+		if [ -n "$(grep -E '^### FINISH BUILD ###' ${LOG})" ]
+		then
+			RESUME="$(ls -1 ${SCRIPTDIR}/ | grep -E "^[[:digit:]].+\.sh" | sort -n | sed -e '/^'${FILE}'/,/^$/!d' -e '/'${FILE}'/d')"
+			REP="${LOGS[$((${I}+1))]//.log/.sh}"
+			break
+		else
+			rm -f ${LOG}
+		fi
+	done	
+
+	if [ -n "${RESUME}" ]
+	then
+		msg "$(gettext 'Resuming build from "%s"')" "${REP}"
+		ask_secure ${TMPDIR} && rm -rf ${TMPDIR}/* 2>/dev/null
+		process_scripts ${RESUME} || exit
+	else
+		die "$(gettext 'This compilation cant be resumed. Pleas, use %s')" "build"
+	fi
+	
+	return 0
+}
+
+
+#
+# l10n Options
+#
+export TEXTDOMAIN="${0##*/}"
+export TEXTDOMAINDIR="/usr/share/locale"
+
+#
+# Parse settings
+#
+DISTRO="vacteria"
+USER="vct"
+PASSWD=""
+HOME="/home/vct"
+SRCDIR="${HOME}/sources"
+PATCHDIR="${HOME}/patches"
+LOGDIR="${HOME}/logs"
+SCRIPTDIR="${HOME}/scripts"
+ROOTFSDIR="${HOME}/rootfs"
+FILESDIR="${HOME}/files"
+ARCHIVEDIR="${HOME}/toolsets"
+TMPDIR="${HOME}/tmp"
+RUNTEST="0"
+
+parse_options
+
+#
+# Eval input options for action select
+#
+DEBUG="False"
+GETSRC="True"
+TESTSH="True"
+CHECKTOOLS="True"
+
+for P in ${@}
+do
+	case "X${P}" in
+		Xbuild|Xresume|Xconfig|Xtools|Xsetup|Xstart|Xstop|Xclean|Xtest|Xget|Xhelp ) MODE="${P}" ;;
+		X--debug|X--noget|X--notest|X--notools|X--asroot ) PARAMS="${PARAMS} ${P}" ;;
+		X?* ) INPUT="${INPUT} ${P}" ;;
+	esac
+done
+
+for P in ${PARAMS}
+do
+	case ${P} in
+		--debug   ) DEBUG="True"   ;;
+		--noget   ) GETSRC="False" ;;
+		--notest  ) TESTSH="False" ;;
+		--notools ) CHECKTOOLS="False" ;;
+		--asroot  ) ASROOT="True" ;;
+	esac
+done
+
+case "X${MODE}" in
+	Xbuild  ) build_system ${INPUT} ;;
+	Xresume ) resume_build ;;
+	Xconfig ) config_host     ;;
+	Xtools  ) test_host_tools ;;
+	Xsetup  ) setup_chroot    ;;
+	Xstart  ) start_chroot    ;;
+	Xstop   ) stop_chroot     ;;
+	Xclean  ) clean_build     ;;
+	Xtest   ) test_scripts ${INPUT} ;;
+	Xget    ) get_sources  ${INPUT} ;;
+	Xhelp   ) usage           ;;
+	X?*     ) die "$(gettext 'Unknow or unsupported %s option')" "${MODE}"    ;;
+	X       ) die "$(gettext '%s need last one main argument')" "${TEXTDOMAIN}" ;;
+esac

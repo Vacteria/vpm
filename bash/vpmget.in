@@ -1,0 +1,97 @@
+#!/bin/bash
+
+if ! . /etc/vpm/vpm.conf
+then
+	printf 'No %s configuration file found\n' "/etc/vpm/vpm.conf"
+	exit 1
+fi
+
+
+VPMSELF="${0}"
+VPMLIB="${VPM_VPMGET_HOME}"
+VPMDATA="${VPM_COMMON_HOME}"
+TEXTDOMAIN="${VPMSELF##*/}"
+TEXTDOMAINDIR="${VPM_LOCALES}"
+
+RAW_INPUT="${@}"
+
+#
+# Load essential funtions
+#
+. ${VPMLIB}/messages || exit 1
+. ${VPMDATA}/shared  || exit 1
+. ${VPMLIB}/main     || exit 1
+. /etc/vpm/make.conf || exit 1
+
+#
+# Main actions
+#
+ONLY_UPDATE=""
+ONLY_INSTALL=""
+ONLY_REMOVE=""
+ONLY_HELP=""
+
+#
+# Modifiers
+#
+AND_PRINT="0"
+AND_MIRRORS="/etc/vpm/mirrors"
+AND_VERBOSE="0"
+AND_QUIET="0"
+AND_ROOT="/"
+
+SHORTOPTS="uirR:hp"
+LONGOPTS="update,install,remove,root:,help,print"
+GLOBALOPTS="$(getopt --options ${SHORTOPTS} --longoptions ${LONGOPTS} --name ${VPMSELF} -- "$@")"
+[ "$?" != "0" ] && exit >&2
+eval set -- ${GLOBALOPTS}
+
+while true
+do
+	case ${1} in
+		-u|--update      ) ONLY_UPDATE="1"   ;;
+		-i|--install     ) ONLY_INSTALL="1"  ;;
+		-r|--remove      ) ONLY_REMOVE="1"   ;;
+		-R|--root        ) AND_ROOT="${2}"   ;;
+		-h|--help        ) ONLY_HELP="1"     ;;
+		-p|--print       ) AND_PRINT="1"     ;;
+		-m|--mirrors     ) AND_MIRROS="${2}" ;;
+		-- ) shift ; break                   ;;
+	esac
+	shift
+done
+FILTER_INPUT="${@}"
+AND_ROOT="$(absolute_path ${AND_ROOT})"
+
+declare -i INDEX=(
+	${ONLY_UPDATE}
+	${ONLY_INSTALL}
+	${ONLY_REMOVE}
+	${ONLY_HELP}
+)
+case ${#INDEX[@]} in
+	1 ) true ;;
+	0 ) printme -f "die" msg_mis_args ;;
+	* ) printme -f "die" msg_too_args ;;
+esac
+
+runtime_vars
+
+if [ "${ONLY_UPDATE}" == "1" ]
+then
+	include "update"
+	include "net"
+	
+	update_mirrors
+elif [ "${ONLY_INSTALL}" == "1" ]
+then
+	include "install"
+	include "query"
+	include "data"
+	include "net"
+	 
+	install_packages ${FILTER_INPUT}
+elif [ "${ONLY_HELP}" == "1" ]
+then
+	usage
+fi

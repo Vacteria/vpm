@@ -1,0 +1,99 @@
+#!/bin/bash
+
+usage()
+{
+	printf "$(gettext "Summary :
+ vpm is a oficial Vacteria GNU/Linux local package manager
+ 
+ Usage : 
+ %s [options] [packages]
+ 
+Options :
+ -i,--install    Install vpm package on a system
+ -r,--remove     Remove a installed vpm package
+ -c,--config     Config a installed vpm package
+ -e,--extract    Extract vpm package archive
+ -m,--makepkg    Compres dir into vpm package
+ -d,--dbase      Initialize vpm database in rootfs
+ -h,--help       Show this help and exit with code 0
+ -s,--search     Search some pattern in loca database
+ -l,--list       List all installed packages in local database
+ -R,--root       use especified root as rootfs
+ -v,--verbose    Show so much messages
+ -q,--quiet      Only show fatal errors
+ -f,--force      Force actions (set ON all --no* options)
+ -o,--output     Set output file location with -m
+ --recursive     Unisntall package recursibly
+ --noscript      Skip setup file execution
+ --notriggers    No shot packages autodetect triggers
+ --norundeps     Skip run depends check
+ --noconflicts   Skip detected conflicts 
+ --noldconfig    With -m skip ldconfig execution inside package
+ --noconfig      On bulk mode, skip final configuration (usefull for images)
+ --nohold        No stop on hold states error detected
+ 
+ This package is distributed under GPL V 2.1 license without any
+ warranty.
+ 
+ Please, reporte bugs on <bugs@vacteria.org> unde product 'vpm'
+ 
+ ")" "${VPMSELF}"
+ 
+}
+
+printme()
+{
+	local OPTS FUNCTION LOGER
+
+	OPTS="$(getopt -o f:l: -l function:,loger -- "${@}")"
+	eval set -- ${OPTS}
+	while true
+	do
+		case ${1} in
+			-f|--function) FUNCTION="${2}" ;;
+			-l|--loger   ) LOGER="${2}"    ;;
+			--           ) shift; break    ;;
+		esac
+		shift
+	done
+	[ -n "${LOGER}" ] && LOGER="${LOGER} => "
+
+	FUNCTION="${FUNCTION:-log}"	
+	case "${FUNCTION}" in
+		msg|warn|error|die|debug|log) true ;;
+		* ) printf "$(gettext 'Invalid "%s" function')\n" "${FUNCTION}" ;;
+	esac
+	MESSAGE="${1}"
+	shift 1
+
+	case ${MESSAGE} in
+		msg_archive_damage )  ${FUNCTION} "${LOGER}$(gettext '%s archive looks like damage')" ${1} ;;
+		msg_mis_file       )  ${FUNCTION} "${LOGER}$(gettext 'Missing %s file')" ${1} ;;
+		msg_empty_file     )  ${FUNCTION} "${LOGER}$(gettext 'Empty %s file')" ${1} ;;
+		msg_mis_dir        )  ${FUNCTION} "${LOGER}$(gettext 'Missing %s directory')" ${1} ;;
+		msg_empty_dir      )  ${FUNCTION} "${LOGER}$(gettext 'Empty %s directory')" ${1} ;;
+		msg_need_list      )  ${FUNCTION} "${LOGER}$(gettext 'Bulk mode need one list file')" ;;
+		msg_mis_args       )  ${FUNCTION} "${LOGER}$(gettext 'Missing arguments')" ;;
+		msg_is_not_file    )  ${FUNCTION} "${LOGER}$(gettext '%s file does looks like regular file')" ${1};;
+		msg_is_not_dir     )  ${FUNCTION} "${LOGER}$(gettext '%s does not looks like a directory')" ${1};;
+		msg_is_not_vpm     )  ${FUNCTION} "${LOGER}$(gettext '%s file does looks like vpm package')" ${1};;
+		msg_fail_extract   )  ${FUNCTION} "${LOGER}$(gettext 'Failed to extract "%s" file')" ${1} ;;
+		msg_fail_compress  )  ${FUNCTION} "${LOGER}$(gettext 'Failed to compress "%s" file')" ${1} ;;
+		msg_bad_pkg_name   )  ${FUNCTION} "${LOGER}$(gettext 'Wrong "%s" package name')" "${1}" ;;
+		msg_no_pkg_name    )  ${FUNCTION} "${LOGER}$(gettext 'Empty or incomplete package name')" ;;
+		msg_bad_formed_pkg )  ${FUNCTION} "${LOGER}$(gettext '%s packaged is bad formed')" "${1}";;
+		msg_not_installed  )  ${FUNCTION} "${LOGER}$(gettext '"%s" package is not installed')" "${1}" ;;
+		msg_need_input     )  ${FUNCTION} "${LOGER}$(gettext '"-%s" query mode need some package as argument')" ${1//-} ;;
+		msg_now_in         )  ${FUNCTION} "${LOGER}$(gettext 'Current place is %s')" ${1} ;;
+		msg_back_to        )  ${FUNCTION} "${LOGER}$(gettext 'Back place to %s')" ${1} ;;
+		msg_mis_stack      )  ${FUNCTION} "${LOGER}$(gettext 'No directory to back found')" ;;
+		msg_running_func   )  ${FUNCTION} "${LOGER}$(gettext 'Running %s() function')" ${1//()} ;;
+		msg_found          )  ${FUNCTION} "${LOGER}$(gettext '%s found')" ${1} ;;
+		msg_testing        )  ${FUNCTION} "${LOGER}$(gettext 'Testing package %s')" ${1} ;;
+		msg_testing_ok     )  ${FUNCTION} "${LOGER}$(gettext 'Package %s testing looks fine')" ${1} ;;
+		msg_testing_fail   )  ${FUNCTION} "${LOGER}$(gettext 'Failed package %s test')" ${1} ;;
+		*                  )  ${FUNCTION} "${LOGER}${MESSAGE}" ${1};;
+	esac
+	
+	return 0
+}

@@ -1,0 +1,171 @@
+#!/bin/bash
+
+bulk_test_list()
+{
+	local LIST
+
+	LIST="${1}"
+
+	[ -z "${LIST}" ]    && return 1
+	[ ! -f "${LIST}" ]  && return 2
+
+	PROC_DIRS="$(grep -Ev "^(#|$)" ${LIST})"
+	[ -z "${PROC_DIRS}" ] && return 3
+
+	return 0
+}
+
+bulk_test_dirs()
+{
+	local DIR
+
+	for DIR in ${@}
+	do
+		if [[ -d "${DIR}" && -f "${DIR}/spec" ]]
+		then
+			true
+		else
+			MIS_DIRS+=" ${DIR}"
+		fi
+	done
+
+	[ -n "${MIS_DIRS}" ] && return 1
+
+	return 0
+}
+
+bulk_find_packages()
+{
+	local DIR VPM
+
+	for DIR in ${@}
+	do
+		VPM="$(find ${DIR} -type f -name "*.vpm")"
+		if [ -n "${VPM}" ]
+		then
+			PROC_PKGS+=" ${VPM}"
+		else
+			NO_PKGS+=" ${DIR}"
+		fi
+	done
+
+	[ -n "${NO_PKGS}" ] && return 1
+
+	return 0
+}
+
+bulk_trim_trailing()
+{
+	local I STRIP
+
+	for I in ${@}
+	do
+		I=$(trim_trailing ${I})
+		STRIP+=" ${I}"
+	done
+
+	[ -z "${STRIP}" ] && return 1
+
+	printf "${STRIP}"
+
+	return 0
+}
+
+bulk_test_buildirs()
+{
+	local DIR FOUND D BUILDIR
+
+	for DIR in ${@}
+	do
+		DIR="$(trim_trailing ${DIR})"
+		DIR="${DIR##*/}"
+		FOUND="$(find ${DEF_BUILDROOT} -type d -name ${DIR} 2>/dev/null)"
+
+		if [ -z "${FOUND}" ]
+		then
+			NOT_FOUND+=" ${DIR}"
+			continue
+		fi
+
+		for D in ${FOUND}
+		do
+			unset BUILDIR
+			if [ -f ${D}/spec ]
+			then
+				BUILDIR="${D}"
+				break
+			fi
+		done
+
+		if [ -z "${BUILDIR}" ]
+		then
+			NOT_FOUND+=" ${DIR}"
+			continue
+		fi
+
+		if ! ls -1 "${BUILDIR}" >/dev/null
+		then
+			NOT_ACCESS+=" ${DIR}"
+			continue
+		fi
+
+		if [ ! -f "${BUILDIR}/spec" ]
+		then
+			NOT_BUILDIR+=" ${DIR}"
+			continue
+		fi
+
+		PROC_BUILDIRS+=" ${DIR}"
+	done
+
+	return 0
+}
+
+bulk_test_installed()
+{
+	local I
+	unset FOUND_PKGS NOTFOUND_PKGS
+
+	for I in ${@}
+	do
+		if ! find_exactly ${I}
+		then
+			FOUND_PKGS+=" ${I}"
+		else
+			NOTFOUND_PKGS+=" ${I}"
+		fi
+	done
+
+	[ -n "${NOTFOUND_PKGS}" ] && return 1
+
+	return 0
+}
+
+bulk_run()
+{
+	bulk_test_list ${1}
+	case $? in
+		1 ) printme -f "die" msg_need_list ;;
+		2 ) printme -f "die" msg_mis_file    ${1} ;;
+		3 ) printme -f "die" msg_empty_file  ${1} ;;
+	esac
+
+	bulk_test_buildirs ${PROC_DIRS}
+	if [ -n "${NOT_FOUND}" ]
+	then
+		die "$(gettext 'The next buildirs not found :\n%s')" "${NOT_FOUND}"
+	fi
+
+	if [ -n "${NOT_ACCESS}" ]
+	then
+		die "$(gettext 'The next buildirs have not access :\n%s')" "${NOT_ACCESS}"
+	fi
+
+	if [ -n "${NOT_BUILDIR}" ]
+	then
+		die "$(gettext 'The next directories does not looks like buildir :\n%s')" "${NOT_BUILDIR}"
+	fi
+
+	return 0
+}
+

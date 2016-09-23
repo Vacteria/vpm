@@ -1,0 +1,697 @@
+#!/bin/bash
+
+get_fakeroot_env()
+{	
+	if [ "${AND_ASROOT}" == "0" ]
+	then
+		if [ -z "${FAKEROOTKEY}" ]
+		then
+			if [ "$(id -u)" == "0" ]
+			then
+				if [ "${AND_USER}" != "root" ]
+				then
+					su - ${AND_USER} -c "time fakeroot -- ${@}"
+				else
+					error "$(gettext 'Build package as root user is really very bad idea. If you really')"
+					error "$(gettext 'need do this, then use "%s" option to avoid this error message')" "--asroot"
+					exit 0
+				fi
+			else
+				log "$(gettext 'Running fakeroot environment using %s')" "$(fakeroot -v | sed -e 's/fakeroot //g')"
+				time fakeroot -- ${@}
+				exit $?
+			fi
+		fi
+	else
+		if [ -z "${FAKEROOTKEY}" ]
+		then
+			if [ "$(id -u)" == "0" ]
+			then
+				warn "$(gettext 'Building package as root user.... Good luck')"
+			else
+				log "$(gettext 'Running fakeroot environment, "%s" option will be ignored')" "--asroot"
+				time fakeroot -- ${@}
+				exit $?
+			fi
+		fi
+	fi
+	
+	return 0
+}
+
+search_buildir()
+{
+	local INPUT FOUND D
+
+	INPUT="$(trim_trailing $(trim_slashes ${1}))"	
+	case "X${INPUT}" in
+		X|X.|X./ ) 
+			FOUND="$(pwd)"
+			if [ -f "${FOUND}/spec" ]
+			then
+				VPM_BUILDIR="${FOUND}"
+				VPM_SPECFILE="${VPM_BUILDIR}/spec"
+				VPM_FILESDIR="${VPM_BUILDIR}/files"
+			else
+				die "$(gettext 'Current directory does looks like buildir')"
+			fi
+			return 0
+		;;
+	esac
+	
+	FOUND="$(find ${DEF_BUILDROOT} -type d -name ${INPUT} 2>/dev/null)"
+	[ -z "${FOUND}" ] && die "$(gettext '"%s" buildir does not exist')" "${INPUT}"		
+	for D in ${FOUND}
+	do
+		if [ -f "${D}/spec" ]
+		then
+			VPM_BUILDIR="${D}"
+			break
+		fi
+	done
+	[[ -z "${VPM_BUILDIR}" || "$(trim_slashes ${BUILDIR})" == "/" ]]  && die "$(gettext 'Unable to find "%s" buildir')" "${INPUT}" 
+	ls -1 "${VPM_BUILDIR}" >/dev/null || die "$(gettext 'Unable to read "%s" directory content')" "${VPM_BUILDIR}"
+	[ ! -f "${VPM_BUILDIR}/spec" ]  && die "$(gettext 'Unable to find an spec file on "%s"')" "${VPM_BUILDIR}"
+
+	VPM_SPECFILE="${VPM_BUILDIR}/spec"
+	VPM_FILESDIR="${VPM_BUILDIR}/files"
+	
+	return 0
+}
+
+update_buildir()
+{
+	local MY_FILE FILE ONLY_FILE NEED SRC_DOWN FILES_DOWN
+
+	if commander pkg_setup
+	then
+		pkg_setup
+	fi
+	
+	check_sources
+	
+	case ${VPM_PKGPKGTYPE} in
+		fakepkg|metapkg )
+			VPM_AUXFILES+=" ${VPM_SRCFILE}"
+			for NEED in ${VPM_AUXFILES}
+			do
+				ONLY_FILE="$(archive_info --file ${NEED})"
+				if [ "${AND_FORCE}" == "1" ]
+				then
+					TO_DOWN="${TO_DOWN} ${NEED}"
+				else
+					[ ! -f "${VPM_FILESDIR}/${ONLY_FILE}" ] && TO_DOWN="${TO_DOWN} ${NEED}"
+				fi
+			done
+
+			[[ -n "${SRC_DOWN}" || -n "${TO_DOWN}" ]] && printme -f "log" msg_updating_bdr "${VPM_PKGNAME}"
+			[[ -z "${SRC_DOWN}" && -z "${TO_DOWN}" ]] && printme -f "log" msg_updated_bdr  "${VPM_PKGNAME}"
+
+			if [ -n "${TO_DOWN}" ]
+			then
+				for X in ${TO_DOWN}
+				do
+					ONLY_FILE="$(archive_info --file ${X})"
+					fetch_msg "$(printme -f "msg" msg_fetching)" "${ONLY_FILE}"
+					fetch -O -c --outfile=${VPM_FILESDIR}/${ONLY_FILE} ${X}
+					case ${?} in
+						0 ) done_msg ;;
+						* ) fail_msg ;;
+					esac
+				done
+			fi
+
+			return 0
+		;;
+	esac
+
+	MY_FILE="$(archive_info --file ${VPM_SRCFILE})"
+	[ "$?" != "0" ] && return 1
+
+	for FILE in $(ls -1 . | grep -E "(.*\.tar.*|.*\.t(gz|bz|bz2|xz|lz)|.*\.zip|.*\.rar|.*\.src.rpm)$" )
+	do
+		[[ "${AND_FORCE}" == "0" && "${FILE}" == "${MY_FILE}" ]] && continue
+		printme -f "log" msg_del_any "${FILE}"
+		rm -f ${VPM_BUILDIR}/${FILE} || return 1
+	done
+
+	if [ "${AND_FORCE}" == "1" ]
+	then
+		for FILE in ${VPM_AUXFILES}
+		do			
+			ONLY_FILE="$(archive_info --file ${FILE})"
+			if [ -f ${VPM_FILESDIR}/${ONLY_FILE} ]
+			then
+				printme -f "log" msg_del_any "${ONLY_FILE}"
+				rm -f ${VPM_FILESDIR}/${ONLY_FILE} || return 1
+			fi
+		done
+	fi
+
+	if commander pkg_mksources 
+	then
+		if [[ -n "${MY_FILE}" && ! -f ${VPM_BUILDIR}/${MY_FILE} ]]
+		then
+			if ! pkg_mksources
+			then
+				die "$(gettext 'Failed to create tar source')"
+				exit
+			fi
+			return 0
+		fi
+	fi
+
+	[[ -f "${VPM_BUILDIR}/${MY_FILE}" && "${AND_FORCE}" == "1" ]] && SRC_DOWN="${VPM_SRCFILE}"
+	[ ! -f "${VPM_BUILDIR}/${MY_FILE}" ] && SRC_DOWN="${VPM_SRCFILE}"
+
+	for NEED in ${VPM_AUXFILES}
+	do
+		ONLY_FILE="$(archive_info --file ${NEED})"
+		if [ "${AND_FORCE}" == "1" ]
+		then
+			TO_DOWN="${TO_DOWN} ${NEED}"
+		else
+			[ ! -f "${VPM_FILESDIR}/${ONLY_FILE}" ] && TO_DOWN="${TO_DOWN} ${NEED}"
+		fi
+	done
+
+	[[ -n "${SRC_DOWN}" || -n "${TO_DOWN}" ]] && printme -f "log" msg_updating_bdr "${VPM_PKGNAME}"
+	[[ -z "${SRC_DOWN}" && -z "${TO_DOWN}" ]] && printme -f "log" msg_updated_bdr  "${VPM_PKGNAME}"
+
+	if [ -n "${SRC_DOWN}" ]
+	then
+		ONLY_FILE="$(archive_info --file ${SRC_DOWN})"
+		fetch_msg "$(printme -f "msg" msg_fetching)" "${ONLY_FILE}"
+		fetch -O -c --outfile=${VPM_BUILDIR}/${ONLY_FILE} ${SRC_DOWN}
+		case ${?} in
+			0 ) done_msg ;;
+			* ) fail_msg ;;
+		esac
+	fi
+	
+	if [ -n "${TO_DOWN}" ]
+	then
+		for X in ${TO_DOWN}
+		do
+			ONLY_FILE="$(archive_info --file ${X})"
+			fetch_msg "$(printme -f "msg" msg_fetching)" "${ONLY_FILE}"
+			fetch -O -c --outfile=${VPM_FILESDIR}/${ONLY_FILE} ${X}
+			case ${?} in
+				0 ) done_msg ;;
+				* ) fail_msg ;;
+			esac
+		done
+	fi
+
+	return 0
+}
+
+apply_patches()
+{
+	local RAW IN XO FUNC
+	
+	case "${1}" in
+		msg|log|warn|debug) FUNC="${1}" ; shift ;;
+	esac
+	
+	FUNC="${FUNC:-log}"	
+
+	for IN in ${VPM_PKGPATCHES}
+	do
+		NP="${IN##${VPM_FILESDIR}}"
+		NP="${NP%%'#'*}"
+		
+		printme -f "${FUNC}" msg_running_patch "${NP}"
+		i_patch "${VPM_FILESDIR}/${NP}"
+		case $? in
+			1 ) printme -f "die" msg_mis_file "${NP}"   ;;
+			2 ) printme -f "die" msg_fail_patch "${NP}" ;;
+		esac
+	done
+
+	return 0
+}
+
+i_patch()
+{
+	#
+	# Return codes :
+	# 0 = Everithing is ok
+	# 1 = Missing patch file
+	# 2 = failed to apply patch
+	#
+
+	local PATCH STATUS PRIOR
+	
+	PATCH="${1%%'#'*}"
+	STATUS="0"
+
+	case ${PATCH} in
+		-* | !* ) return 0 ;;
+	esac
+
+	if [ -f "${PATCH}" ]
+	then
+		if ! patch --forward --batch --strip=0 --input=${PATCH} >/dev/null
+		then
+			STATUS="0"
+			for PRIOR in $(seq 1 30)
+			do
+				debug "$(gettext ' * Trying next %s priority')" "${PRIOR}"
+				if patch --quiet --forward --batch --strip=${PRIOR} --input=${PATCH} &>/dev/null
+				then
+					STATUS="1"
+					break
+				fi
+			done
+		else
+			STATUS="1"
+		fi
+		
+		(( "${STATUS}" < "1" )) && return 2
+	else
+		return 1
+	fi
+
+	return 0
+}
+
+spec_vpm_clean()
+{
+	local OPTS INPUT FUNC
+
+	OPTS="$(getopt -o l: -l loger: -- "$@")"
+	eval set -- ${OPTS}
+	while true
+	do
+		case ${1} in
+			-l|--loger ) FUNC="${2}"  ;;
+			--         ) shift ; break ;;
+		esac
+		shift
+	done
+	
+	INPUT="${1}"
+	[ -z "${INPUT}" ] && return 1
+
+	find ${INPUT}/ -maxdepth 1 -type f -name "*.vpm" -iname "*.*${VPM_PKGARCH}*.*" -or -iname "*.*noarch*.*"  | while read I
+	do
+		printme -f "${FUNC}" msg_del_any "${I##*/}"
+		rm -f -- "${I}"
+	done
+
+	return 0
+}
+
+spec_buildir_clean()
+{
+	local MODE FUNC OPTS I
+
+	MODE="0"
+	FUNC="log"
+	OPTS="$(getopt -o fl: -l full,loger: -- "$@")"
+	eval set -- ${OPTS}
+	while true
+	do
+		case ${1} in
+			-f|--full  ) MODE="1"  ;;
+			-l|--loger ) FUNC="${2}"  ;;
+			--         ) shift ; break ;;
+		esac
+		shift
+	done
+
+	check_sources
+	
+	[ "$(trim_slashes ${VPM_BUILDIR})" == "/" ] && die "$(gettext 'Unable to use %s as buildir. Are you crazy \?')" "/"
+
+	${FUNC} "$(gettext 'Cleanning %s buildir')" "${VPM_BUILDIR}"
+	
+	ls -1 ${VPM_BUILDIR}/ | while read I
+	do
+		case "X${I}" in
+			Xfiles|Xspec|Xchangelog|X${VPM_SRCFILE##*/}|Xbuildlog|*vpm )
+				continue
+			;;
+			* )
+				printme -f "${FUNC}" msg_del_any -- "${I}"
+				rm -rf -- "${VPM_BUILDIR}/${I}"
+			;;
+		esac
+	done
+
+	[ "${MODE}" == "1" ] && spec_vpm_clean --loger "${FUNC}" "${VPM_BUILDIR}" || return 1
+	[ -d "${VPM_FILESDIR}" ] && rmdir --ignore-fail-on-non-empty "${VPM_FILESDIR}"
+
+	return 0
+}
+
+distro_support()
+{	
+	case "X${DEF_DISTRO}" in
+		Xdebian | Xslackware | Xvacteria | Xarch | Xlfs ) true ;;
+		X ) die "$(gettext 'Unable to detect linux distribution')" ;;
+		* ) die "$(gettext 'Unsupported %s linux distribution')" "${DEF_DISTRO}" ;;
+	esac
+		
+	return 0
+}
+
+archive_support()
+{
+	case "X${DEF_ARCHIVE}" in
+		Xtar|Xbsdtar ) true ;;
+		X         ) die "$(gettext 'Unable to set archive tools for build system')"  ;;
+		*         ) die "$(gettext 'Unsupported %s archive suite')" "${DEF_ARCHIVE}" ;;
+	esac
+
+	return 0
+}
+
+libc_support()
+{
+	[ -z "${VPM_LIBC6}" ] && die "$(gettext 'Failed to detect any usable libc')"
+
+	case ${VPM_LIBC6} in
+		glibc|eglibc) true ;;
+		* ) die "$(Invalid or unsupported %s libc)" "${VPM_LIBC6}" ;;
+	esac
+
+	return 0
+}
+
+search_and_run_non_global()
+{
+	#
+	# Here will be run modifiers functions to reset default variables
+	# later, this override varibles will be used
+	#
+	
+	local FUNC GLOB FOUND 
+
+	for FUNC in ${@}
+	do
+		VPM_CUR_FUNCTION="${FUNC}"
+		if commander ${FUNC}
+		then
+			for GLOB in set-pkgarch \
+				set-holdon set-buildon set-pkgtype set-unpack \
+				set-mkpkg rm-empty rm-libtool set-filesname \
+				set-ldconfig set-autodeps set-strip set-version \
+				set-release set-sections set-rundeps set-buildeps \
+				set-optdeps set-shlibdeps set-conflicts set-blacklist \
+				set-useragent add-sections add-rundeps add-buildeps \
+				add-optdeps add-shlibdeps set-pkgpatch set-unpack \
+				add-conflicts add-blacklist set-cflags unset-cflags \
+				add-cflags strip-cflags set-cxxflags unset-cxxflags \
+				add-cxxflags strip-cxxflags set-ldflags unset-ldflags \
+				add-ldflags strip-ldflags unset-bothflags unset-allflags
+			do
+				FOUND="$(command -V ${FUNC} | grep -Eo "(^|[[:space:]])${GLOB}([[:space:]]|$|.+)" | tr -d ";")"
+				if [ -n "${FOUND}" ]
+				then
+					eval ${FOUND}
+				fi
+			done
+		fi
+	done
+	
+	return 0	
+}
+
+extract_src()
+{
+	local MY_FILE MY_CMD
+
+	MY_FILE="$(archive_info --file "${VPM_SRCFILE}")"
+	MY_CMD="$(archive_info --unpack ${VPM_BUILDIR}/${MY_FILE})"
+	
+	case $? in
+		1 ) msg_mis_args "${FUNCNAME}" ;;
+		2 ) msg_mis_file "${MY_FILE}" ;;
+		3 ) die "$(gettext 'Unsupported or unknow file extension')"
+	esac
+
+	if [ -n "${VPM_WORKDIR}" ]
+	then
+		mkdir -p ${VPM_WORKDIR}
+		chdir ${VPM_WORKDIR}
+		${MY_CMD} "${VPM_BUILDIR}/${MY_FILE}" &>/dev/null || exit 1
+	else
+		${MY_CMD} ${VPM_BUILDIR}/${MY_FILE} || return 1
+		VPM_WORKDIR="$(find ${VPM_BUILDIR} -mindepth 1 -maxdepth 1 -type d ! -name spec ! -name "*.log" ! -name files ! -name ${MY_FILE})"
+
+		[ -z "${VPM_WORKDIR}" ] && die "$(gettext 'Unable to set work directory')"
+
+		set -- ${VPM_WORKDIR}
+		if [ ${#@} -gt 1 ]
+		then
+			die "$(gettext 'Multiple work directories found\n')" "${@}"
+		else
+			chdir ${VPM_WORKDIR}
+		fi
+	fi
+
+	return 0
+}
+
+private_global_variables()
+{	
+	VPM_PKGSOURCES="${VPM_SOURCES}"
+	VPM_PKGPATCH="${AND_PATCH:-1}"
+	VPM_PKGUNPACK="${VPM_UNPACK:-1}"
+	VPM_PKGSUBPKGS="${VPM_SUBPKGS}"
+	MINOR="${VPM_MINOR}"
+
+	if [ -d "${VPM_FILESDIR}/patches.d" ]
+	then
+		VPM_PKGPATCHES="$(find ${VPM_FILESDIR}/patches.d -mindepth 1 | sed -e "s#${VPM_FILESDIR}/##" | sort -n)"
+	else
+		VPM_PKGPATCHES="${VPM_PATCHES}"
+	fi
+	
+	return 0 
+}
+
+private_package_variables()
+{
+	# only set-*()
+#	VPM_PKGNAME="${VPM_NAME}"
+	VPM_PKGVERSION="${VPM_VERSION}"
+	VPM_PKGRELEASE="${VPM_RELEASE}"
+
+	# add-* and set-*()
+	VPM_PKGPKGTYPE="${VPM_PKGTYPE}"   # * put in build
+	VPM_PKGSECTIONS="${VPM_SECTIONS}"
+	VPM_PKGRUNDEPS="${VPM_RUNDEPS}"
+	VPM_PKGBUILDEPS="${VPM_BUILDEPS}"
+	VPM_PKGOPTDEPS="${VPM_OPTDEPS}"
+	VPM_PKGSHLIBDEPS="${VPM_SHLIBDEPS}"
+	VPM_PKGCONFLICTS="${VPM_CONFLICTS}"
+	VPM_PKGBLACKLIST="${VPM_BLACKLIST}"
+	VPM_PKGPKGARCH="${VPM_PKGARCH}"
+	VPM_PKGCFLAGS="${VPM_CFLAGS}"
+	VPM_PKGCXXFLAGS="${VPM_CFLAGS}"
+	VPM_PKGCPPFLAGS=""
+	VPM_PKGLDFLAGS="${VPM_LDFLAGS}"
+	VPM_PKGMKPKG="${VPM_MKPKG:-1}"
+	VPM_PKGSTRIP="${VPM_STRIP:-1}"
+	VPM_PKGAUTODEPS="${VPM_AUTODEPS:-1}"
+	VPM_PKGBUILDON="${VPM_BUILDON}"
+	VPM_PKGHOLDON="${VPM_HOLDON}"
+	VPM_PKGRMEMPTY="${VPM_RMEMPTY:-0}"
+	VPM_PKGRMLIBTOOL="${VPM_RMLIBTOOL:-0}"
+	VPM_PKGSETPERMS="${VPM_SETPERM:-1}"
+	VPM_PKGLDCONFIG="${VPM_LDCONFIG:-1}"
+	
+	VPM_PKGMAKEFLAGS="${VPM_MAKEFLAGS}" # VPM_USE_MAKEFLAGS=""
+	VPM_PKGMAKETEST="${VPM_MAKETEST}"   # VPM_MAKE_TEST=""
+	VPM_PKGBCONFIG="${VPM_BCONFIG}"     # VPM_BEFORE_CONFIG
+	VPM_PKGBMAKE="${VPM_BMAKE}"         # VPM_BEFORE_MAKE
+	VPM_PKGBINSTALL="${VPM_BINSTALL}"   # VPM_BEFORE_INSTALL
+	VPM_PKGUOPTS="${VPM_UOPTS}"         # VPM_UNSET_OPTS
+	
+	VPM_PKGDESTCMD="${VPM_DESTCMD}"     #VPM_DEST_CMD
+	VPM_PKGDESTDIR="${VPM_DESTDIR}"     #VPM_DEST_DIR * put in buil
+	VPM_PKGBASEDIR="${VPM_BASEDIR}"     #VPM_BASE_DIR
+	VPM_PKGDESTGT="${VPM_DESTGT}"       #VPM_DEST_TGT
+	VPM_PKGMAKECMD="${VPM_MAKECMD}"     #VPM_MAKE_CMD
+	VPM_PKGINSTCMD="${VPM_INSTCMD}"     #VPM_INSTALL_CMD * put in buil
+	VPM_PKGDOCDIR="${VPM_DATADIR}/doc/${VPM_PKGNAME}"
+	VPM_PKGDIR="$(trim_slashes "${VPM_BUILDIR}/${VPM_PKGNAME}-root/data")"
+	VPM_PKGFILESNAME="${VPM_PKGNAME}"
+	VPM_PKGTRIPLET="${VPM_TRIPLET}"
+	
+	return 0
+}
+
+read_spec_paths()
+{
+	local VPM_SPEC_SYSCONF VPM_SPEC_PREFIX
+
+	if [ -n "${VPM_CUR_FUNCTION}" ]
+	then
+
+		eval VPM_SPEC_BINDIR="$(command -V ${VPM_CUR_FUNCTION} | grep -Eo "(\-\-bindir=.*|\-DBIN_INSTALL_DIR(:PATH|=).*)" | cut -d ' ' -f 1 | sed -e 's/.*=//g' -e 's/\"//g')" 2>/dev/null
+		eval VPM_SPEC_SBINDIR="$(command -V ${VPM_CUR_FUNCTION} | grep -Eo "(\-\-sbindir=.*|\-DSBIN_INSTALL_DIR(:PATH|=).*)" | cut -d ' ' -f 1 | sed -e 's/.*=//g' -e 's/\"//g')" 2>/dev/null
+		eval VPM_SPEC_LIBDIR="$(command -V ${VPM_CUR_FUNCTION} | grep -Eo "(\-\-libdir=.*|\-DLIB_INSTALL_DIR(:PATH|=).*)" | cut -d ' ' -f 1 | sed -e 's/.*=//g' -e 's/\"//g')" 2>/dev/null
+		eval VPM_SPEC_USR_BINDIR="$(command -V ${VPM_CUR_FUNCTION} | grep -Eo "(\-\-usrbindir=.*|\-DUSR_BIN_INSTALL_DIR(:PATH|=).*)" | cut -d ' ' -f 1 | sed -e 's/.*=//g' -e 's/\"//g')" 2>/dev/null
+		eval VPM_SPEC_USR_SBINDIR="$(command -V ${VPM_CUR_FUNCTION} | grep -Eo "(\-\-usrsbindir=.*|\-DUSR_SBIN_INSTALL_DIR(:PATH|=).*)" | cut -d ' ' -f 1 | sed -e 's/.*=//g' -e 's/\"//g')" 2>/dev/null
+		eval VPM_SPEC_USR_LIBDIR="$(command -V ${VPM_CUR_FUNCTION} | grep -Eo "(\-\-usrlib=.*|\-DUSR_LIB__INSTALL_DIR(:PATH|=).*)" | cut -d ' ' -f 1 | sed -e 's/.*=//g' -e 's/\"//g')" 2>/dev/null
+		eval VPM_SPEC_INCLUDEDIR="$(command -V ${VPM_CUR_FUNCTION} | grep -Eo "(\-\-includedir=.+|\-DINCLUDE_INSTALL_DIR(:PATH|=).+)" | cut -d ' ' -f 1 | sed -e 's/.*=//g' -e 's/\"//g')"	2>/dev/null
+		eval VPM_SPEC_LIBEXECDIR="$(command -V ${VPM_CUR_FUNCTION} | grep -Eo "(\-\-libexecdir=.+|\-DLIBEXEC_INSTALL_DIR(:PATH|=).+)" | cut -d ' ' -f 1 | sed -e 's/.*=//g' -e 's/\"//g')" 2>/dev/null
+		eval VPM_SPEC_DOCDIR="$(command -V ${VPM_CUR_FUNCTION} | grep -Eo "(\-\-docdir=.+|\-DDOC_INSTALL_DIR(:PATH|=).+)" | cut -d ' ' -f 1 | sed -e 's/.*=//g' -e 's/\"//g')" 2>/dev/null
+		eval VPM_SPEC_SYSCONFDIR="$(command -V ${VPM_CUR_FUNCTION} | grep -Eo "(\-\-sysconfdir=.*|\-DSYSCONF_INSTALL_DIR(:PATH|=).*)" | cut -d ' ' -f 1 | sed -e 's/.*=//g' -e 's/\"//g')" 2>/dev/null
+		eval VPM_SPEC_PREFIX="$(command -V ${VPM_CUR_FUNCTION} | grep -Eo "(\-\-prefix=.*|\-\-DCMAKE_INSTALL_PREFIX(:PATH|=).*)" | cut -d ' ' -f 1 | sed -e 's/.*=//g' -e 's/\"//g')" 2>/dev/null
+		eval VPM_DEBUG_LINE="$(command -V ${VPM_CUR_FUNCTION} | grep -Eo "\-\-(enable|disable)\-debug(=.+[[:space:]]|[[:space:]])")"
+		if [ -n "${VPM_DEBUG_LINE}" ]
+		then
+			DEBUG_OPT="${VPM_DEBUG_LINE%=*}"
+			DEBUG_VAL="${VPM_DEBUG_LINE#*=}"
+			case ${DEBUG_OPT} in
+				--enable-debug* )
+					case ${DEBUG_VAL} in
+						*yes* | ${DEBUG_OPT} )
+							if [ "${VPM_PKGPKGARCH}" == "noarch" ]
+							then
+								VPM_ENABLE_DEBUG="0"
+							else
+								VPM_ENABLE_DEBUG="1"
+							fi
+						;;
+						*no* )
+							VPM_ENABLE_DEBUG="0"
+						;;
+					esac
+				;;
+				--disable-debug* )
+					case ${DEBUG_VAL} in
+						*no* | ${DEBUG_OPT} )
+							VPM_ENABLE_DEBUG="1"
+						;;
+						*yes* )
+							VPM_ENABLE_DEBUG="0"
+						;;
+					esac
+				;;
+			esac
+		else
+			VPM_ENABLE_DEBUG="0"
+		fi
+	fi
+
+	if [ -z "$(command -V ${VPM_CUR_FUNCTION} | grep -Eo "(^|[[:space:]])inherit[[:space:]].*")" ]
+	then
+		VPM_SPEC_BINDIR="${VPM_SPEC_BINDIR:-${VPM_BINDIR}}"
+		VPM_SPEC_SBINDIR="${VPM_SPEC_SBINDIR:-${VPM_SBINDIR}}"
+		VPM_SPEC_LIBDIR="${VPM_SEPC_LIBDIR:-${VPM_LIBDIR}}"
+		VPM_SPEC_USR_BINDIR="${VPM_SPEC_USR_BINDIR:-${VPM_USR_BINDIR}}"
+		VPM_SPEC_USR_SBINDIR="${VPM_SPEC_USR_SBINDIR:-${VPM_USR_SBINDIR}}"
+		VPM_SPEC_USR_LIBDIR="${VPM_SPEC_USR_LIBDIR:-${VPM_USR_LIBDIR}}"
+		VPM_SPEC_INCLUDEDIR="${VPM_SPEC_INCLUDEDIR:-${VPM_INCLUDEDIR}}"
+		VPM_SPEC_LIBEXECDIR="${VPM_SPEC_LIBEXECDIR:-$(trim_slashes ${VPM_LIBEXECDIR}/${VPM_PKGNAME})}"
+		VPM_SPEC_DOCDIR="${VPM_SPEC_DOCDIR:-${VPM_DOCDIR}/${VPM_PKGNAME}}"
+		VPM_SPEC_SYSCONFDIR="${VPM_SPEC_SYSCONFDIR:-${VPM_SYSCONF}}"
+		VPM_SPEC_PREFIX="${VPM_SPEC_PREFIX:-${VPM_PREFIX}}"
+	fi
+
+	return 0
+}
+
+validate_buildon()
+{
+	local FOUND="0"
+	FAIL_BUILDON=""
+	
+	for X in ${@}
+	do
+		case "X${X}" in
+			X${VPM_PKGPKGARCH}|Xall)
+				FOUND="1"
+				break
+			;;
+		esac
+		[ "${FOUND}" == "0" ] && FAIL_BUILDON="${FAIL_BUILDON} ${X}"
+	done
+
+	[ -n "${FAIL_BUILDON}" ] && return 1
+
+	return 0
+}
+
+validate_holdon()
+{
+	local FOUND X Y
+
+	FOUND="0"
+	FAIL_HOLDON=""
+	
+	for X in ${@}
+	do
+		FOUND="0"
+		for Y in ${VPM_VALID_HOLDON[@]}
+		do
+			if [ "${X}" == "${Y}" ]
+			then
+				FOUND="1"
+				break
+			fi
+		done
+		[ "${FOUND}" == "0" ] && FAIL_HOLDON="${FAIL_HOLDON} ${X}" 
+	done
+	
+	[ -n "${FAIL_HOLDON}" ] && return 1
+	
+	return 0
+}
+
+validate_functions()
+{
+	local R INPUT
+	
+	INPUT="$(trim_no_allowed ${@})"
+
+	FAIL_FUNCTIONS=""
+	VALID_FUNCTIONS=""
+	SUB_FUNC="0"
+	
+	for R in ${INPUT}
+	do
+		if ! commander pkg_${R}
+		then
+			FAIL_FUNCTIONS+=" ${R}"
+		else
+			[ "pkg_${R}" == "pkg_${VPM_PKGNAME}" ] && SUB_FUNC="1"
+			VALID_FUNCTIONS+=" ${R}"
+		fi
+	done
+	
+	[ -n "${FAIL_FUNCTIONS}" ] && return 1
+	
+	return 0
+}
+
+new_changelog()
+{
+	local DEVNAME DEVMAIL CHANGELOG
+
+	if [ -f "${VPM_BUILDIR}/changelog" ]
+	then
+		CHANGELOG="${VPM_BUILDIR}/changelog"
+	else
+		die "$(gettext 'No changelog file foud in %s')" "${VPM_BUILDIR##*/}"
+	fi
+		
+	DEVNAME="${DEF_PACKAGER_NAME:-Vacteria Packager Team}"
+	DEVMAIL="${DEF_PACKAGER_MAIL:-packages@vacteria.org}"
+	DEVMAIL="${DEVMAIL//[<,>]}"
+	
+cat >> ${CHANGELOG} <<EOF
+$(date +%Y-%m-%d) ${DEVNAME} <${DEVMAIL}>
+ * My first line of changelog
+
+EOF
+
+	return 0
+}
+

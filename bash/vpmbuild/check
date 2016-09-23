@@ -1,0 +1,193 @@
+#!/bin/bash
+
+check_version()
+{
+	if [ -n "$(echo ${1} | grep -Es -- "-")" ]
+	then
+		error "$(gettext 'Invalid "%s" charset on version string')" '-'
+		return 1
+	fi
+	
+	return 0
+}
+
+check_sources()
+{
+	set -- ${VPM_PKGSOURCES}
+	case ${#@} in
+		0 )
+			case "${VPM_PKGPKGTYPE}" in
+				pkg|binpkg)
+					die "$(gettext 'Unable to set valid sources for "%s" package')" "${VPM_PKGNAME}"
+				;;
+			esac
+		;;
+		1 )
+			VPM_SRCFILE="${1}"
+			VPM_AUXFILES=""
+		;;
+		* )
+			VPM_SRCFILE="${1}"
+			shift 1
+			VPM_AUXFILES="${@}"
+		;;
+	esac
+
+	return 0
+}
+
+check_buildeps()
+{
+	local TRIM RET
+	
+	TRIM="$(trim_no_allowed ${VPM_PKGBUILDEPS})"
+	if [ -n "${TRIM}" ]
+	then
+		MISSING_MEMBERS=$(vpmqdb -bf ${VPM_DATABASE} ${TRIM})
+		RET=$?
+	fi
+	return ${RET}
+}
+
+check_pkgtype()
+{
+	if ! validate_pkgtypes ${1}
+	then
+		error "$(gettext 'Invalid %s pkgtype')" ${1}
+		return 1
+	fi
+	
+	return 0
+}
+
+check_pkgarch()
+{
+	if ! validate_pkgarchs ${1}
+	then
+		error "$(gettext 'Invalid %s pkgarch')" ${1}
+		return 1
+	fi
+	
+	return 0
+}
+
+check_sections()
+{
+	local RAW
+	
+	RAW="$(trim_no_allowed ${@})"
+	
+	if ! validate_sections ${RAW}
+	then
+		error "$(gettext 'Invalid pkg sections :')" 
+		printf "%s\n" ${FAIL_SECTIONS}
+		return 1
+	fi
+	
+	return 0
+}
+
+check_buildon()
+{
+	local RAW
+	
+	RAW="$(trim_no_allowed ${@})"
+	
+	if ! validate_buildon ${RAW}
+	then
+		warn "$(gettext 'Package only can be build on %s architectures')" ${FAIL_BUILDON}
+		return 1
+	fi
+
+	return 0
+}
+
+check_patches()
+{
+	local RAW IN XO PASS FAIL_PATCHES
+	
+	RAW="$(trim_no_allowed ${@})"
+	for IN in ${RAW##${VPM_FILESDIR}}
+	do
+		IN="${IN%%'#'*}"
+		XO="${IN}"
+		
+		if [ ! -f "${VPM_FILESDIR}/${XO}" ]
+		then
+			FAIL_PATCHES="${FAIL_PATCHES} ${XO}"
+		else
+			PASS="${PASS} ${XO}"
+		fi
+	done
+	
+	if [ -n "${FAIL_PATCHES}" ]
+	then
+		error "$(gettext 'The nex selected patches not found')"
+		printf "%s\n" ${FAIL_PATCHES}
+		return 1
+	fi
+	
+	VPM_PKGPATCHES="${PASS}"
+	
+	return 0
+}
+
+check_functions()
+{
+	if ! validate_functions ${@}
+	then
+		error "$(gettext 'The nex package functions are missing :')"
+		printf "%s\n" ${FAIL_FUNCTIONS}
+		return 1
+	fi
+		
+	return 0
+}
+
+check_function_settings()
+{
+	if [ "${ONLY_PATCH}" == "1" ]
+	then
+		# Evaluate patches modifcable by add-patches
+		if [ -d "${VPM_FILESDIR}/patches.d" ]
+		then
+			VPM_PKGPATCHES="$(find ${VPM_FILESDIR}/patches.d -mindepth 1 | sed -e "s#${VPM_FILESDIR}/##" | sort -n)"
+		fi
+	
+		check_patches "${VPM_PKGPATCHES}" || return 1
+	else
+		# First evaluate build depends mofificable by set-buildeps() and
+		# add-buildeps() functions
+		if [[ -n "${VPM_PKGBUILDEPS}" && "${AND_BUILDEPS}" == "1" ]]
+		then
+			if ! check_buildeps "${VPM_PKGBUILDEPS}"
+			then
+				error "$(gettext '%s have missing build depends :\n%s')" "${VPM_PKGNAME}" "${MISSING_MEMBERS}"
+				return 1
+			fi
+		fi
+
+		# Validate package type modificable by set-pkgtype()
+		check_pkgtype "${VPM_PKGPKGTYPE}" || return 1
+
+		# Evaluate package architecture modificable by set-pkgarch()
+		check_pkgarch "${VPM_PKGPKGARCH}" || return 1
+	
+		# Evaluate sections modifcable by set-sections() and add-sections()
+		check_sections ${VPM_PKGSECTIONS} || return 1
+
+		# Evaluate package version and stop on wrong charsets
+		check_version ${VPM_PKGVERSION} || return 1
+
+		# Evaluate buildon settings modificable by set-buildon() and add-buildon()
+		check_buildon ${VPM_PKGBUILDON} || return 2
+		
+		# Evaluate patches modifcable by add-patches
+		if [ -d "${VPM_FILESDIR}/patches.d" ]
+		then
+			VPM_PKGPATCHES="$(find ${VPM_FILESDIR}/patches.d -mindepth 1 | sed -e "s#${VPM_FILESDIR}/##" | sort -n)"
+		fi
+	
+		check_patches "${VPM_PKGPATCHES}" || return 1
+	fi
+}

@@ -1,0 +1,222 @@
+#!/bin/bash
+
+. /etc/vpm/vpm.conf
+. ${VPM_COMMON_HOME}/shared
+
+test_by()
+{
+	# inherit exit statuses from getent command. So 
+	# this function return's 0 if user exist or 1 if not
+
+	local MYMODE MYINPUT MYTARGET
+
+	MYMODE="${1}"
+	MYINPUT="${2}"
+	[[ -z "${MYMODE}" || -z "${MYINPUT}" ]] && return 1
+
+	case "${MYMODE}" in
+		usr ) MYTARGET="passwd" ;;
+		grp ) MYTARGET="group"  ;;
+		*   ) return 1          ;;
+	esac
+
+	commander getent || return 1
+
+	getent ${MYTARGET} ${MYINPUT} &>/dev/null
+
+	return $?
+}
+
+kill_by()
+{
+	local MYMODE MYINPUT NOKILL I
+
+	MYMODE="${1}"
+	MYINPUT="${2}"
+
+	[ -z "${MYMODE}" ]  && return 1
+	[ -z "${MYINPUT}" ] && return 1
+	! commander ps      || return 0
+	! commander kill    || return 0
+
+	case ${MYMODE} in
+		usr ) MYTARGET="-U" ;;
+		grp ) MYTARGET="-G" ;;
+		*   ) print "$(gettext 'unknow operation mode %s')" "${MYMODE}" ; return 1;;
+	esac
+
+	for I in $(ps --no-headers ${MYTARGET} ${MYINPUT} -o pid)
+	do
+		kill -KILL ${I} || NOKILL+=" ${I}"
+		wait
+	done
+
+	if [ -n "${NOKILL}" ]
+	then
+		printf "$(gettext 'Unable to kill next process\n%s')" "${NOKILL}"
+		return 1
+	fi
+
+	return 0
+}
+
+delete_user()
+{
+	local MYUSER="${1}"
+	shift
+
+	if test_by "usr" "${MYUSER}"
+	then
+		userdel ${MYUSER} || die "$(gettext 'Failed to delete previusly %s create user')" "${MYUSER}"
+	fi
+
+	return 0
+}
+
+create_user()
+{
+	local MYUSER="${1}"
+	shift
+
+	delete_user "${MYUSER}"
+	eval -- useradd ${@} ${MYUSER} || die "$(gettext 'Failed to create %s user')" "${MYUSER}"
+	return 0
+}
+
+delete_group()
+{
+	local MYGROUP U
+
+	MYGROUP="${1}"
+	unset MYUSRS
+	shift
+	
+	if test_by "grp" "${MYGROUP}"
+	then
+		if ! groupdel ${MYGROUP}  &>/dev/null
+		then
+			if test_by "usr" ${MYGROUP}
+			then
+				delete_user ${MYGROUP}
+			fi
+
+			for U in $(grep -E -- "^${MYGROUP}:.*" /etc/group | awk -F: '{print $4}')
+			do
+				gpasswd -d ${U} ${MYGROUP}
+				[ "${U}" == "${MYGROUP}" ] && continue
+				MYUSRS+=(${U})
+			done
+		fi
+
+		if test_by "grp" "${MYGROUP}"
+		then
+			if ! groupdel ${MYGROUP}
+			then
+				if (( ${#MYUSRS[@]} > 0 ))
+				then
+					for U in ${MYUSRS[@]}
+					do
+						gpasswd -a ${U} ${MYGROUP}
+					done
+					unset MYUSRS
+					die "$(gettext 'Failed to delete previusly %s create group')" "${MYUSER}"
+				fi
+			fi
+		fi
+	fi
+
+	return 0
+}
+
+create_group()
+{
+	local MYGROUP ADDFAIL U
+
+	MYGROUP="${1}"
+	shift
+
+	delete_group "${MYGROUP}"
+	groupadd ${@} ${MYGROUP} || die "$(gettext 'Failed to create %s group')" "${MYGROUP}"
+
+	if (( ${#MYUSRS[@]} > 0 ))
+	then
+		for U in ${MYUSRS[@]}
+		do
+			if test_by "usr"
+			then
+				if ! gpasswd -a ${U} ${MYGROUP} &>/dev/null
+				then
+					ADDFAIL+=" ${U}"
+				fi
+			fi
+		done
+		unset MYUSRS
+	fi
+
+	if [ -n "${ADDFAIL}" ]
+	then
+		warn $(gettext 'The group %s was sucefull add but fail to add the next users\n%s') "${MYGROUP}" "${ADDFAIL}"
+	fi
+
+	return 0
+}
+
+rc_handler()
+{
+	local SCRIPT RCDIR
+
+	RCDIR="/etc/rc.d"
+	SCRIPT="${1##${RCDIR}/}"
+	shift
+
+	if [[ -r "${RCDIR}/${SCRIPT}" && -x "${RCDIR}/${SCRIPT}" ]]
+	then
+		${RCDIR}/${SCRIPT} ${@}
+	fi
+
+	return 0
+}
+
+kill_gconf()
+{
+	if [ -x /usr/bin/gconftool-2 ]
+	then
+		/usr/bin/gconftool-2 --shutdown
+	fi
+}
+
+reload_gconf()
+{
+	local MYPID
+
+	MYPID="$(pidof gconfd-2)"
+
+	if [ -n "${MYPID}" ]
+	then
+		kill -HUP ${MYPID}
+	fi
+
+	return 0
+}
+
+setattr()
+{
+	local FILE OWNER GROUP MODE
+	
+	(( ${#@} < 4 )) && die "$(gettext '%s need 4 arguments and %s is found')" "4" "${#@}"
+	
+	FILE="${1}"
+	OWNER="${2}"
+	GROUP="${3}"
+	MODE="${4}"
+	
+	[ ! -e "${FILE}" ] && die "$(gettext '%s file not found on system')" "${FILE}"
+	getent group ${GROP} &>/dev/null  || die "$(gettext '%s group does not exist')" "${GROUP}"
+	getent passwd ${GROP} &>/dev/null || die "$(gettext '%s user does not exist')" "${USER}"
+	
+	chown ${OWNER}:${GROUP} ${FILE}
+	chmod ${MODE} ${FILE}
+
+	return 0
+}
+

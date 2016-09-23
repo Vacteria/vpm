@@ -1,0 +1,83 @@
+#!/bin/bash
+
+update_mirrors()
+{
+	# Return MIRROR_LIST asociative array
+	parse_mirrors
+	
+	GLOBAL_FILE="0"
+	
+	declare -A MIRROR_LIST
+	for I in ${RAW_LIST}
+	do
+		MIRROR_LIST["${I}"]="$(path_to_url ${I})"
+	done
+	
+	for I in ${!MIRROR_LIST[@]}
+	do
+		URL="${I}"
+		DIR="${VPM_DATA_DIR}/${MIRROR_LIST[${I}]}"
+		
+		mkdir -p ${DIR}
+		msg "$(gettext 'Updating mirrors')"
+		FAIL="0"
+
+		for A in ${VPM_VALID_PKGARCHS[@]}
+		do
+			if ! fetch -i -n ${URL}/data/${A}.db.gz -o ${DIR}/${A}.db.gz.tmp
+			then
+				FAIL="${A}"
+			else
+				SUCCESS="${A}"
+			fi
+		done
+		if [ -z "${SUCCESS}" ]
+		then
+			error "$(gettext 'Failed to retrive any database from %s')" "${URL}"
+			rm -f ${DIR}/*.tmp
+			rmdir --igore-fail-on-non-empty ${DIR}
+			return 1
+		fi
+		
+		if ! fetch -n ${URL}/data/manifest.tar.gz -o ${DIR}/manifest.tar.gz.tmp
+		then
+			error "$(gettext 'Failed to retrive %s.tar.gz from %s')" "manifest" "${URL}"
+			rm -f ${DIR}/*.tmp
+			return 1
+		fi
+		
+		for A in ${VPM_VALID_PKGARCHS[@]}
+		do
+			if [ -f ${DIR}/${A}.db.gz.tmp ]
+			then
+				if ! gzip -t ${DIR}/${A}.db.gz.tmp
+				then
+					printme -f "error" msg_file_damaged ${A}.db.gz
+					rm -f ${DIR}/*.tmp
+					return 1
+				fi
+			fi
+		done
+		
+		if ! tar -tf  ${DIR}/manifest.tar.gz.tmp 1>&2 >/dev/null
+		then
+			printme -f "error" msg_file_damaged manifest.tar.gz.tmp
+			rm -f ${DIR}/*.tmp
+			return 1
+		fi
+
+		for A in ${VPM_VALID_PKGARCHS[@]}
+		do
+			[ -f ${DIR}/${A}.db.gz     ] && rm -f ${DIR}/${A}.db.gz
+			[ -f ${DIR}/${A}.db.gz.tmp ] && mv ${DIR}/${A}.db.gz.tmp ${DIR}/${A}.db.gz
+			[ -f ${DIR}/${A}.db        ] && rm -f ${DIR}/${A}.db
+			[ -f ${DIR}/${A}.db.gz     ] && gzip -d ${DIR}/${A}.db.gz
+		done
+		
+		mv ${DIR}/manifest.tar.gz.tmp ${DIR}/manifest.tar.gz
+		[ -d "${DIR}/manifest" ] && rm -rf ${DIR}/manifest
+		mkdir -p ${DIR}/manifest
+		tar -C ${DIR}/manifest -xf ${DIR}/manifest.tar.gz
+		rm -f ${DIR}/manifest.tar.gz
+	done
+}

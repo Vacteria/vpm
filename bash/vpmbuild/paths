@@ -1,0 +1,276 @@
+#!/bin/bash
+
+print_paths()
+{
+	VPM_SYSCONF="/etc"
+	VPM_LIBDIR="/lib"
+	VPM_LIBDIR_32="${VPM_LIBDIR}32"
+	VPM_USR_LIBDIR="/${VPM_PREFIX}/${VPM_LIBDIR}"
+	VPM_USR_LIBDIR_32="/${VPM_PREFIX}/${VPM_LIBDIR_32}"
+	VPM_LOCAL_LIBDIR="/${VPM_PREFIX}/local/${VPM_LIBDIR}"
+	VPM_LOCAL_LIBDIR_32="/${VPM_PREFIX}/local/${VPM_LIBDIR_32}"
+	VPM_LSBDIR="${VPM_LIBDIR}/lsb"	
+	VPM_BINDIR="/bin"
+	VPM_SBINDIR="/sbin"
+	VPM_INCLUDEDIR="/${VPM_PREFIX}/include"
+	VPM_LIBEXECDIR="${VPM_USR_LIBDIR}"
+	VPM_USR_BINDIR="/${VPM_PREFIX}/bin"
+	VPM_USR_SBINDIR="/${VPM_PREFIX}/sbin"
+	VPM_DATADIR="/${VPM_PREFIX}/share"
+	VPM_INFODIR="/${VPM_DATADIR}/info"
+	VPM_MANDIR="/${VPM_DATADIR}/man"
+	VPM_DOCDIR="${VPM_DATADIR}/doc"
+	VPM_MENUDIR="${VPM_DATADIR}/applications"
+	VPM_HICOLORDIR="${VPM_DATADIR}/icons/hicolor"
+	VPM_PIXMAPDIR="${VPM_DATADIR}/pixmaps"
+	VPM_RCDIR="/etc/rc.d"
+	VPM_ROTATEDIR="/etc/rotate.d"
+	VPM_RSYSLOGDIR="/etc/rsyslog.d"
+	VPM_UDEVDIR="/lib/udev"
+	VPM_RULESDIR="${VPM_UDEVDIR}/rules.d"
+	VPM_RCCONFDIR="/etc/rc.conf.d"
+	VPM_COMPLETIONDIR="/etc/bash_completion.d"
+	VPM_PROFILEDIR="/etc/profile.d"
+	VPM_BASHRCDIR="/etc/bashrc.d"
+	VPM_BASHLOGOUTDIR="/etc/bashrc.logout.d"
+	VPM_BASHLOGINDIR="/etc/bashrc.login.d"
+	VPM_PAMDIR="/etc/pam.d"
+	VPM_LIMITSDIR="/etc/security/limits.d"
+	VPM_SECURITYDIR="/lib/security"
+	VPM_RAMFSDIR="${VPM_DATADIR}/mkramfs"
+	VPM_XINETDIR="/etc/xinet.d"
+	VPM_LOCALEDIR="${VPM_DATADIR}/locale"
+	VPM_PKGCONFIG="${VPM_USR_LIBDIR}/pkgconfig"
+	VPM_PKGCONFIG_32="${VPM_LIBDIR_32}/pkgconfig"
+	VPM_PKGCONFIG_PATH="${VPM_LIBDIR}/pkgconfig:${VPM_USR_LIBDIR}/pkgconfig:${VPM_LOCAL_LIBDIR}/pkgconfig"
+	VPM_PKGCONFIG_PATH_32="${VPM_LIBDIR_32}/pkgconfig:${VPM_USR_LIBDIR_32}/pkgconfig:${VPM_LOCAL_LIBDIR_32}/pkgconfig"
+	VPM_FONTDIR="${VPM_DATADIR}/fonts"
+	VPM_XINITRC="/etc/X11/xinit/xinitrc.d"
+	VPM_TZDATADIR="${VPM_DATADIR}/zoneinfo"
+
+	VPM_KERNEL_TYPE="none"
+	VPM_KERNEL_NAME="linux"
+	VPM_KERNEL_VERSION="${VPM_VERSION}"
+	VPM_KERNEL_MODSVER="${VPM_VERSION}${MYTYPE}"
+	VPM_KERNEL_SOURCES="/usr/src/${VPM_KERNEL_NAME}-${VPM_KERNEL_VERSION}"
+	VPM_KERNEL_MODULES="/lib/modules/${VPM_KERNEL_MODSVER}"
+	VPM_KERNEL_HEADERS="/usr/src/${VPM_KERNEL_NAME}-headers-${VPM_KERNEL_VERSION}"
+	VPM_KERNEL_FIRMWARE="/lib/firmware"
+
+	return 0
+}
+
+
+
+# ======================
+# Root package variables
+# ======================
+p_name()      { printf "${NAME}\n"; }
+p_version()   { printf "${VERSION}\n"; }
+p_rundeps()   { printf "${VPM_RUNDEPS}\n"; }
+p_conflicts() { printf "${VPM_CONFLICTS}\n"; }
+p_buildeps()  { printf "${VPM_BUILDEPS}\n"; }
+p_optdeps()   { printf "${VPM_OPTDEPS}\n"; }
+p_shlibdeps() { printf "${VPM_SHLIBDEPS}\n"; }
+p_arch()      { printf "${VPM_PKGARCH}\n"; }
+
+
+
+#==============================
+# Especific package variables
+#==============================
+
+p_pkgname()    { printf "${VPM_PKGNAME}\n"; }
+p_pkgversion() { printf "${VPM_PKGVERSION}\n"; }
+p_rundeps()    { printf "${VPM_PKGRUNDEPS}\n"; }
+p_conflicts()  { printf "${VPM_PKGCONFLICTS}\n"; }
+p_buildeps()   { printf "${VPM_PKGBUILDEPS}\n"; }
+p_optdeps()    { printf "${VPM_PKGOPTDEPS}\n"; }
+p_shlibdeps()  { printf "${VPM_PKGSHLIBDEPS}\n"; }
+p_pkgarch()    { printf "${VPM_PKGPKGARCH}\n"; }
+
+
+
+#========================
+# System variables 
+#========================
+p_realarch()   { printf "${VPM_REALARCH}\n"; }
+p_subpkgs()    { printf "${VPM_PKGSUBPKGS}"; }
+p_sources()    { printf "${VPM_PKGSOURCES}\n"; }
+p_rawsources()
+{
+	local X Y
+
+	for X in ${VPM_PKGSOURCES}
+	do
+		Y+=" $(archive_info --file ${X})"
+	done
+
+	printf "${Y}\n"
+
+	return 0
+}
+p_srcfile()  { printf "${VPM_SRCFILE}\n"; }
+p_rawsrcfile()  { printf "$(archive_info --file ${VPM_SRCFILE})\n"; }
+p_auxfiles() { printf "${VPM_AUXFILES}\n"; }
+p_rawauxfiles() 
+{
+	local X Y
+
+	for X in ${VPM_AUXFILES}
+	do
+		Y+=" $(archive_info --file ${X})"
+	done
+
+	printf "${Y}\n"
+
+	return 0
+}
+
+p_select()
+{
+	INDEX="${1}"
+	shift 
+	INPUT="${@}"
+	
+	[[ -z "${INPUT}" || -z "${INDEX}" ]] && retirn 1
+
+	LIST=(${INPUT})	
+
+	NUM="${#LIST[@]}"
+	(( ${NUM} < 1 )) && return 1
+		
+	if (( ${INDEX} <= ${NUM} ))
+	then
+		printf "${LIST[${INDEX}]}"
+	fi
+	
+	return 0
+}
+
+p_pam()      { printf "${VPM_PAMDIR}\n"; }
+p_limits()   { printf "${VPM_LIMITSDIR}\n"; }
+p_security() { printf "${VPM_SECURITYDIR}\n"; }
+p_ramfs()    { printf "${VPM_RAMFSDIR}\n"; }
+
+
+#==================
+# System paths
+#=================
+p_lsb()       { printf "$(trim_slashes "${VPM_LSBDIR}")\n"; }
+p_bin()       { printf "${VPM_BINDIR}\n"; }
+p_sbin()      { printf "${VPM_SBINDIR}\n"; }
+p_usrbin()    { printf "${VPM_USR_BINDIR}\n"; }
+p_usrsbin()   { printf "${VPM_USR_SBINDIR}\n"; }
+p_lib()       { printf "$(trim_slashes "${VPM_LIBDIR}")\n"; }
+p_usrlib()    { printf "$(trim_slashes "${VPM_USR_LIBDIR}")\n"; }
+p_localib()   { printf "$(trim_slashes "${VPM_LOCAL_LIBDIR}")\n"; }
+p_lib32()     { printf "$(trim_slashes "${VPM_LIBDIR_32}")\n"; }
+p_usrlib32()  { printf "$(trim_slashes "${VPM_USR_LIBDIR_32}")\n"; }
+p_localib32() { printf "$(trim_slashes "${VPM_LOCAL_LIBDIR_32}")\n"; }
+p_include()   { printf "$(trim_slashes "${VPM_INCLUDEDIR}")\n"; }
+p_libexec()   { printf "$(trim_slashes "${VPM_LIBEXECDIR}")\n"; }
+p_data()      { printf "$(trim_slashes "${VPM_DATADIR}")\n"; }
+p_tzdata()    { printf "$(trim_slashes "${VPM_TZDATADIR}")\n"; }
+p_pkgconfig()        { printf "$(trim_slashes "${VPM_PKGCONFIG}")\n"; }
+p_pkgconfig_path() { printf "$(trim_slashes "${VPM_PKGCONFIG_PATH}")\n"; }
+p_pkgconfig32()      { printf "$(trim_slashes "${VPM_PKGCONFIG_32}")\n"; }
+p_pkgconfig_path32() { printf "$(trim_slashes "${VPM_PKGCONFIG_PATH_32}")\n"; }
+p_font()      { printf "$(trim_slashes "${VPM_FONTDIR}")"; }
+p_info()      { printf "$(trim_slashes "${VPM_INFODIR}")\n"; }
+p_doc()       { printf "$(trim_slashes "${VPM_DOCDIR}")\n"; }
+p_conf()      { printf "$(trim_slashes "${VPM_SYSCONF}")\n"; }
+p_menu()      { printf "${VPM_MENUDIR}\n"; }
+p_hicolor()   { printf "${VPM_HICOLORDIR}\n"; }
+p_pixmap()    { printf "${VPM_PIXMAPDIR}\n"; }
+p_rc()        { printf "${VPM_RCDIR}\n"; }
+p_rotate()    { printf "${VPM_ROTATEDIR}\n"; }
+p_rsyslog()   { printf "${VPM_RSYSLOGDIR}\n"; }
+p_udev()      { printf "${VPM_UDEVDIR}\n"; }
+p_rules()     { printf "${VPM_RULESDIR}\n"; }
+p_rcconf()    { printf "${VPM_RCCONFDIR}\n"; }
+p_prefix()    { printf "$(trim_slashes "/${VPM_PREFIX}")\n"; }
+p_man()       { printf "$(trim_slashes "${VPM_MANDIR}")\n"; }
+p_man1()      { printf "${VPM_MANDIR}/man1\n"; }
+p_man2()      { printf "${VPM_MANDIR}/man2\n"; }
+p_man3()      { printf "${VPM_MANDIR}/man3\n"; }
+p_man4()      { printf "${VPM_MANDIR}/man4\n"; }
+p_man5()      { printf "${VPM_MANDIR}/man5\n"; }
+p_man6()      { printf "${VPM_MANDIR}/man6\n"; }
+p_man7()      { printf "${VPM_MANDIR}/man7\n"; }
+p_man8()      { printf "${VPM_MANDIR}/man8\n"; }
+
+
+
+#======================================
+# Package redefined paths in spec file
+#======================================
+p_pkgbin()     { printf "$(trim_slashes ${VPM_SPEC_BINDIR})\n";}
+p_pkgsbin()    { printf "$(trim_slashes ${VPM_SPEC_SBINDIR})\n";}
+p_pkgusrbin()  { printf "$(trim_slashes ${VPM_SPEC_USR_BINDIR})\n";}
+p_pkgusrsbin() { printf "$(trim_slashes ${VPM_SPEC_USR_SBINDIR})\n";}
+p_pkglib()     { printf "$(trim_slashes ${VPM_SPEC_LIBDIR})\n";}
+p_pkgusrlib()  { printf "$(trim_slashes ${VPM_SPEC_USR_LIBDIR})\n";}
+p_pkginclude() { printf "$(trim_slashes ${VPM_SPEC_INCLUDEDIR})\n";}
+p_pkglibexec() { printf "$(trim_slashes ${VPM_SPEC_LIBEXECDIR})\n";}
+p_pkgdoc()     { printf "$(trim_slashes ${VPM_SPEC_DOCDIR})\n";}
+p_pkgconf()    { printf "$(trim_slashes ${VPM_SPEC_SYSCONFDIR})\n";}
+p_pkgprefix()  { printf "$(trim_slashes ${VPM_SPEC_PREFIX})\n";}
+
+
+
+#================
+# Compiler flags
+#================
+p_cflags()    { printf '%s\n' "${VPM_PKGCFLAGS}"; }
+p_cxxflags()  { printf '%s\n' "${VPM_PKGCXXFLAGS}"; }
+p_cppflags()  { printf '%s\n' "${VPM_PKGCPPFLAGS}"; }
+p_ldflags()   { printf '%s\n' "${VPM_PKGLDFLAGS}"; }
+p_triplet()   { printf '%s\n' "${VPM_PKGTRIPLET}"; }
+
+
+
+#==================
+# kernel variables
+#=================
+p_ktype()     { printf '%s\n' "${VPM_KERNEL_TYPE}"; }
+p_kname()     { printf '%s\n' "${VPM_KERNEL_NAME}"; }
+p_kver()      { printf '%s\n' "${VPM_KERNEL_VERSION}"; }
+p_kmodsver()  { printf '%s\n' "${VPM_KERNEL_MODSVER}"; }
+p_ksrc()      { printf '%s\n' "${VPM_KERNEL_SOURCES}"; }
+p_kmods()     { printf '%s\n' "${VPM_KERNEL_MODULES}"; }
+p_khdr()      { printf '%s\n' "${VPM_KERNEL_HEADERS}"; }
+p_kfwr()      { printf '%s\n' "${VPM_KERNEL_FIRMWARE}"; }
+p_buildroot() { printf "${VPM_BUILDROOT}\n"; }
+p_locale()    { printf "${VPM_LOCALEDIR}\n"; }
+p_buildir()   { printf "${VPM_BUILDIR}\n"; }
+p_specfile()  { printf "${VPM_SPECFILE}\n"; }
+p_files()     { printf "${VPM_FILESDIR}\n"; }
+p_minor()     { printf "${VERSION%.*}\n"; }
+
+#================
+# Tools variables
+#================
+
+p_pybin()
+{
+	type -pa python | head -1
+}
+
+p_pyversion()
+{
+	PYBIN="$(p_pybin)"
+	[ -z "${PYBIN}" ] && return 0
+	
+	${PYBIN} -V 2>&1 | cut -f 2 -d' ' | cut -f 1-2 -d.
+	
+	return 0
+}
+
+p_pylibs()
+{
+	PYBIN="$(p_pybin)"
+	[ -z "${PYBIN}" ] && return 0
+
+	${PYBIN} -c 'from distutils.sysconfig import get_python_lib; print get_python_lib()'
+}

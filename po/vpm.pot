@@ -1,0 +1,448 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR THE PACKAGE'S COPYRIGHT HOLDER
+# This file is distributed under the same license as the PACKAGE package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: PACKAGE VERSION\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2012-12-24 00:03-0600\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"Language: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=CHARSET\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+#: bash/vpm.in:121
+msgid "%s need main argument"
+msgstr ""
+
+#: bash/vpm.in:122
+msgid "Only one main action at the same time"
+msgstr ""
+
+#: bash/vpm/messages:5
+msgid ""
+"Summary :\n"
+" vpm is a oficial Vacteria GNU/Linux local package manager\n"
+" \n"
+" Usage : \n"
+" %s [options] [packages]\n"
+" \n"
+"Options :\n"
+" -i,--install    Install vpm package on a system\n"
+" -r,--remove     Remove a installed vpm package\n"
+" -c,--config     Config a installed vpm package\n"
+" -e,--extract    Extract vpm package archive\n"
+" -m,--makepkg    Compres dir into vpm package\n"
+" -d,--dbase      Initialize vpm database in rootfs\n"
+" -h,--help       Show this help and exit with code 0\n"
+" -s,--search     Search some pattern in loca database\n"
+" -l,--list       List all installed packages in local database\n"
+" -R,--root       use especified root as rootfs\n"
+" -v,--verbose    Show so much messages\n"
+" -q,--quiet      Only show fatal errors\n"
+" -f,--force      Force actions (set ON all --no* options)\n"
+" -o,--output     Set output file location with -m\n"
+" --recursive     Unisntall package recursibly\n"
+" --noscript      Skip setup file execution\n"
+" --notriggers    No shot packages autodetect triggers\n"
+" --norundeps     Skip run depends check\n"
+" --noconflicts   Skip detected conflicts \n"
+" --noldconfig    With -m skip ldconfig execution inside package\n"
+" --noconfig      On bulk mode, skip final configuration (usefull for "
+"images)\n"
+" --nohold        No stop on hold states error detected\n"
+" \n"
+" This package is distributed under GPL V 2.1 license without any\n"
+" warranty.\n"
+" \n"
+" Please, reporte bugs on <bugs@vacteria.org> unde product 'vpm'\n"
+" \n"
+" "
+msgstr ""
+
+#: bash/vpm/messages:64
+msgid "Invalid \"%s\" function"
+msgstr ""
+
+#: bash/vpm/messages:70
+msgid "%s archive looks like damage"
+msgstr ""
+
+#: bash/vpm/messages:71
+msgid "Missing %s file"
+msgstr ""
+
+#: bash/vpm/messages:72
+msgid "Empty %s file"
+msgstr ""
+
+#: bash/vpm/messages:73
+msgid "Missing %s directory"
+msgstr ""
+
+#: bash/vpm/messages:74
+msgid "Empty %s directory"
+msgstr ""
+
+#: bash/vpm/messages:75
+msgid "Bulk mode need one list file"
+msgstr ""
+
+#: bash/vpm/messages:76
+msgid "Missing arguments"
+msgstr ""
+
+#: bash/vpm/messages:77
+msgid "%s file does looks like regular file"
+msgstr ""
+
+#: bash/vpm/messages:78
+msgid "%s does not looks like a directory"
+msgstr ""
+
+#: bash/vpm/messages:79
+msgid "%s file does looks like vpm package"
+msgstr ""
+
+#: bash/vpm/messages:80
+msgid "Failed to extract \"%s\" file"
+msgstr ""
+
+#: bash/vpm/messages:81
+msgid "Failed to compress \"%s\" file"
+msgstr ""
+
+#: bash/vpm/messages:82
+msgid "Wrong \"%s\" package name"
+msgstr ""
+
+#: bash/vpm/messages:83
+msgid "Empty or incomplete package name"
+msgstr ""
+
+#: bash/vpm/messages:84
+msgid "%s packaged is bad formed"
+msgstr ""
+
+#: bash/vpm/messages:85
+msgid "\"%s\" package is not installed"
+msgstr ""
+
+#: bash/vpm/messages:86
+msgid "\"-%s\" query mode need some package as argument"
+msgstr ""
+
+#: bash/vpm/messages:87
+msgid "Current place is %s"
+msgstr ""
+
+#: bash/vpm/messages:88
+msgid "Back place to %s"
+msgstr ""
+
+#: bash/vpm/messages:89
+msgid "No directory to back found"
+msgstr ""
+
+#: bash/vpm/messages:90
+msgid "Running %s() function"
+msgstr ""
+
+#: bash/vpm/messages:91
+msgid "%s found"
+msgstr ""
+
+#: bash/vpm/messages:92
+msgid "Testing package %s"
+msgstr ""
+
+#: bash/vpm/messages:93
+msgid "Package %s testing looks fine"
+msgstr ""
+
+#: bash/vpm/messages:94
+msgid "Failed package %s test"
+msgstr ""
+
+#: bash/vpm/remove:13
+msgid "Uninstalling initscripts"
+msgstr ""
+
+#: bash/vpm/remove:27
+msgid "Deleting package content"
+msgstr ""
+
+#: bash/vpm/remove:81
+msgid "The next packages is not installed :\\n%s"
+msgstr ""
+
+#: bash/vpm/remove:110
+msgid "%s package is holded for remove"
+msgstr ""
+
+#: bash/vpm/remove:115
+msgid "Uninstalling %s package"
+msgstr ""
+
+#: bash/vpm/main:10
+msgid "%s only is allowed whit root privileges"
+msgstr ""
+
+#: bash/vpm/main:61
+msgid "Creating vpm struct and data base"
+msgstr ""
+
+#: bash/vpm/main:75
+msgid "Exist database on / will be override"
+msgstr ""
+
+#: bash/vpm/main:76
+msgid "Do you want to continue \\?"
+msgstr ""
+
+#: bash/vpm/main:81
+msgid "Exiting ..."
+msgstr ""
+
+#: bash/vpm/archive:198
+msgid "Unpacking \"%s\" package"
+msgstr ""
+
+#: bash/vpm/archive:235
+msgid "Data directory for \\\"%s\\\" package is empty"
+msgstr ""
+
+#: bash/vpm/archive:245
+msgid "Creating %s package"
+msgstr ""
+
+#: bash/vpm/archive:248
+msgid "Failed ldconfig execution"
+msgstr ""
+
+#: bash/vpm/archive:251
+msgid "Failed package file creation"
+msgstr ""
+
+#: bash/vpm/archive:252
+msgid "Failed to create %s package"
+msgstr ""
+
+#: bash/vpm/installf:24
+msgid "Installing initscripts"
+msgstr ""
+
+#: bash/vpm/installf:70
+msgid "The next directories is missing :\\n%s"
+msgstr ""
+
+#: bash/vpm/installf:75
+msgid "The next directories have not vpm packages :\\n%s"
+msgstr ""
+
+#: bash/vpm/installf:118
+msgid "Finding %s on installed packages"
+msgstr ""
+
+#: bash/vpm/installf:123
+msgid "%s package is allready installed"
+msgstr ""
+
+#: bash/vpm/installf:129
+msgid "Unpacking vpm package"
+msgstr ""
+
+#: bash/vpm/installf:132
+msgid "Reading package file dates"
+msgstr ""
+
+#: bash/vpm/installf:138
+msgid "Invalid sections :\\n%s"
+msgstr ""
+
+#: bash/vpm/installf:146
+msgid "Invalid package arch %s"
+msgstr ""
+
+#: bash/vpm/installf:154
+msgid "Invalid package type %s"
+msgstr ""
+
+#: bash/vpm/installf:159
+msgid "Comparing dates side by side"
+msgstr ""
+
+#: bash/vpm/installf:162
+msgid "Package dates is not consistent"
+msgstr ""
+
+#: bash/vpm/installf:171
+msgid "This package is holded for installation"
+msgstr ""
+
+#: bash/vpm/installf:183
+msgid "The next runtime depends for %s package are missing\\n%s"
+msgstr ""
+
+#: bash/vpm/installf:199
+msgid "The next packages are conflict with %s\\n%s"
+msgstr ""
+
+#: bash/vpm/installf:209
+msgid "Installing %s package"
+msgstr ""
+
+#: bash/vpm/installf:230
+msgid "Unpacking data"
+msgstr ""
+
+#: bash/vpm/runtime:45
+msgid "unknow operation mode %s"
+msgstr ""
+
+#: bash/vpm/runtime:56
+msgid "Unable to kill next process\\n%s"
+msgstr ""
+
+#: bash/vpm/runtime:70
+msgid "Failed to delete previusly %s create user"
+msgstr ""
+
+#: bash/vpm/runtime:82
+msgid "Failed to create %s user"
+msgstr ""
+
+#: bash/vpm/runtime:122
+msgid "Failed to delete previusly %s create group"
+msgstr ""
+
+#: bash/vpm/runtime:139
+msgid "Failed to create %s group"
+msgstr ""
+
+#: bash/vpm/runtime:158
+msgid "The group %s was sucefull add but fail to add the next users\\n%s"
+msgstr ""
+
+#: bash/vpm/runtime:206
+msgid "%s need 4 arguments and %s is found"
+msgstr ""
+
+#: bash/vpm/runtime:213
+msgid "%s file not found on system"
+msgstr ""
+
+#: bash/vpm/runtime:214
+msgid "%s group does not exist"
+msgstr ""
+
+#: bash/vpm/runtime:215
+msgid "%s user does not exist"
+msgstr ""
+
+#: bash/vpm/triggers:24
+msgid "Updating sared libraries"
+msgstr ""
+
+#: bash/vpm/triggers:46
+msgid "Updating man database"
+msgstr ""
+
+#: bash/vpm/triggers:60
+msgid "Updating info data base"
+msgstr ""
+
+#: bash/vpm/triggers:83
+msgid "Updating desktop database"
+msgstr ""
+
+#: bash/vpm/triggers:102
+msgid "Updating icon themes"
+msgstr ""
+
+#: bash/vpm/triggers:121
+msgid "Updating GDK modules"
+msgstr ""
+
+#: bash/vpm/triggers:134
+msgid "Updating GTK loaders"
+msgstr ""
+
+#: bash/vpm/triggers:163
+msgid "Installing gconf2 schemas"
+msgstr ""
+
+#: bash/vpm/triggers:170
+msgid "Installing %s"
+msgstr ""
+
+#: bash/vpm/triggers:183
+msgid "Loading %s"
+msgstr ""
+
+#: bash/vpm/triggers:193
+msgid "Uninstalling gconf schemas"
+msgstr ""
+
+#: bash/vpm/triggers:199
+msgid "Uninstalling %s"
+msgstr ""
+
+#: bash/vpm/triggers:212
+msgid "Unloading %s"
+msgstr ""
+
+#: bash/vpm/triggers:233
+msgid "Rebuilding xml dconf schemas"
+msgstr ""
+
+#: bash/vpm/triggers:254
+msgid "Updating GIO modules"
+msgstr ""
+
+#: bash/vpm/triggers:269
+#, sh-format
+msgid "Updating modules ${VPM_KO}"
+msgstr ""
+
+#: bash/vpm/triggers:286
+msgid "Updating mime types"
+msgstr ""
+
+#: bash/vpm/triggers:300
+msgid "Setting up %s initscript"
+msgstr ""
+
+#: bash/vpm/triggers:317
+msgid "Deleting fontdir %s"
+msgstr ""
+
+#: bash/vpm/triggers:333
+msgid "Setting fontdir %s"
+msgstr ""
+
+#: bash/vpm/triggers:364
+msgid "Running package triggers"
+msgstr ""
+
+#: bash/vpm/triggers:366
+msgid "No triggers found"
+msgstr ""
+
+#: bash/vpm/triggers:399
+msgid "Unable to find any usable bash shell in %s directory"
+msgstr ""
+
+#: bash/vpm/triggers:404
+msgid "unable to find vpm program in %s directory"
+msgstr ""
+
+#: bash/vpm/triggers:424
+msgid "Setting up %s package"
+msgstr ""

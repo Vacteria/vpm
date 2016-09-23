@@ -1,0 +1,112 @@
+#!/bin/bash
+
+usage()
+{
+	printf "$(gettext "Usage : 
+ %s [options] [buildir]
+ 
+Options :
+ -n,--new
+ -u,--update
+ -p,--patch
+ -c,--clean
+ -b,--build
+ -U,--user
+ -a,--asroot
+ -t,--template
+ -f,--force
+ -h,--help
+ --nobuildeps
+ ")" "${VPMSELF}"
+}
+
+done_msg()
+{
+	# This is for print "DONE" instead percent number
+	#printf "${T_DEL}"
+	#printf "\b\b\b\b\b"
+	#printf "$(gettext 'Done')"
+	#printf "\n"
+	
+	printf "\n"
+#	die "$(gettext 'Failed to download sources')"
+}
+
+fail_msg()
+{
+	# This is to print "FAIL" instead percent number
+	#printf "${T_DEL}"
+	#printf "\b\b\b\b\b"
+	#printf "$(gettext 'Fail')"
+	#printf "\n"
+	
+	printf "\n"
+	die "$(gettext 'Failed to download sources')"
+}
+
+printme()
+{
+	local OPTS FUNCTION LOGER
+
+	OPTS="$(getopt -o f:l: -l function:,loger -- "${@}")"
+	eval set -- ${OPTS}
+	while true
+	do
+		case ${1} in
+			-f|--function) FUNCTION="${2}" ;;
+			-l|--loger   ) LOGER="${2}"    ;;
+			--           ) shift; break    ;;
+		esac
+		shift
+	done
+	[ -n "${LOGER}" ] && LOGER="${LOGER} => "
+	
+	FUNCTION="${FUNCTION:-log}"	
+	case "${FUNCTION}" in
+		msg|warn|error|die|debug|log|sys) true ;;
+		* ) printf "$(gettext 'Invalid "%s" function')\n" "${FUNCTION}" ;;
+	esac
+	MESSAGE="${1}"
+	shift 1
+
+	case ${MESSAGE} in
+		msg_found          )  ${FUNCTION} "${LOGER}$(gettext '%s found')" ${1};;
+		msg_run_func       )  ${FUNCTION} "${LOGER}$(gettext 'Running %s() function')" ${1//()};;
+		msg_fail_func      )  ${FUNCTION} "${LOGER}$(gettext 'Failed to run %s()')" ${1//()};;
+		msg_mis_args       )  ${FUNCTION} "${LOGER}$(gettext 'Missing arguments')" ;;
+		msg_add_any        )  ${FUNCTION} "${LOGER}$(gettext 'Adding %s')" ${1} ;;
+		msg_del_any        )  ${FUNCTION} "${LOGER}$(gettext 'Deleting %s')" ${1} ;;
+		msg_fetching       )  ${FUNCTION} "${LOGER}$(gettext 'Downloading')" ;;
+		msg_updating_bdr   )  ${FUNCTION} "${LOGER}$(gettext 'Updating %s buildir')" ${1} ;;
+		msg_updated_bdr    )  ${FUNCTION} "${LOGER}$(gettext 'Buildir %s is to up date')" ${1} ;;
+		msg_mis_file       )  ${FUNCTION} "${LOGER}$(gettext 'Missing %s file')" ${1} ;;
+		msg_mis_dir        )  ${FUNCTION} "${LOGER}$(gettext 'Missing %s directory')" ${1} ;;
+		msg_running_patch  )  ${FUNCTION} "${LOGER}$(gettext 'Running "%s" patch')" ${1} ;;
+		msg_fail_patch     )  ${FUNCTION} "${LOGER}$(gettext 'Failed to apply "%s" patch')" ${1} ;;
+		msg_fail_load      )  ${FUNCTION} "${LOGER}$(gettext 'Failed to load "%s" file')" ${1} ;;
+		msg_auto_set       )  ${FUNCTION} "${LOGER}$(gettext 'Setting up auto mode "%s" flags')" ${1} ;;
+		msg_fail_extract   )  ${FUNCTION} "${LOGER}$(gettext 'Failed to extract "%s" file')" ${1} ;;
+		msg_stripping      )  ${FUNCTION} "${LOGER}$(gettext 'Stripping %s object')" ${1} ;;
+		msg_installing     )  ${FUNCTION} "${LOGER}$(gettext 'Installing %s into %s')" ${1} ${2};;
+		msg_linking        )  ${FUNCTION} "${LOGER}$(gettext 'Linking %s to %s')" ${1} ${2} ;;
+		msg_unpacking      )  ${FUNCTION} "${LOGER}$(gettext 'Unpacking %s file')" ${1};;
+		msg_forb_use       )  ${FUNCTION} "${LOGER}$(gettext 'Unable to use "%s()" and "%s()" at the same time')" ${1//()} ${2//()};;
+		msg_forb_scope     )  ${FUNCTION} "${LOGER}$(gettext 'Function "%s()" forbiden in %s scope')" ${1//()} ${2};;
+		msg_no_arch_compat )  ${FUNCTION} "${LOGER}$(gettext 'Incompatible %s arch for %s systems')" ${1} ${2} ;;
+		msg_no_prop_val    )  ${FUNCTION} "${LOGER}$(gettext 'Unknow or inapropaite value %s')" ${1};;
+		msg_validating     )  ${FUNCTION} "${LOGER}$(gettext '#### Validating %s package')" ${1};;
+		msg_validating_main)  ${FUNCTION} "${LOGER}$(gettext '#### Validating parent %s main package')" ${1};;
+		msg_building       )  ${FUNCTION} "${LOGER}$(gettext '#### Building %s package')" ${1};;
+		msg_close_valid    )  ${FUNCTION} "${LOGER}$(gettext '#### End %s package validation')" ${1};;
+		msg_close_build    )  ${FUNCTION} "${LOGER}$(gettext '#### End %s package build')" ${1};;
+		msg_close_main     )  ${FUNCTION} "${LOGER}$(gettext '#### End parent %s main package validation')" ${1};;
+		msg_now_in         )  ${FUNCTION} "${LOGER}$(gettext 'Current place is %s')" ${1} ;;
+		msg_back_to        )  ${FUNCTION} "${LOGER}$(gettext 'Back place to %s')" ${1} ;;
+		msg_mis_stack      )  ${FUNCTION} "${LOGER}$(gettext 'No directory to back found')" ;;
+		msg_invalid_ktype  )  ${FUNCTION} "${LOGER}$(gettext 'Invalid %s kernel type')" ${1} ;;
+		msg_need_list      )  ${FUNCTION} "${LOGER}$(gettext 'Bulk mode need a list')" ${1} ;;
+		*                  )  ${FUNCTION} "${LOGER}${MESSAGE}" ${@} ;;
+	esac
+	
+	return 0
+}

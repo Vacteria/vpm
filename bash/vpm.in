@@ -1,0 +1,174 @@
+#!/bin/bash
+
+if ! . /etc/vpm/vpm.conf
+then
+	printf 'No %s configuration file found\n' "/etc/vpm/vpm.conf"
+	exit 1
+fi
+
+VPMSELF="${0}"
+VPMLIB="${VPM_VPM_HOME}"
+VPMDATA="${VPM_COMMON_HOME}"
+TEXTDOMAIN="${VPMSELF##*/}"
+TEXTDOMAINDIR="${VPM_LOCALES}"
+
+#
+# Load essential funtions
+#
+. ${VPMLIB}/messages
+. ${VPMDATA}/shared
+. ${VPMLIB}/main
+
+
+#
+# Main actions
+#
+ONLY_QUERY=""
+ONLY_INSTALL=""
+ONLY_REMOVE=""
+ONLY_CONFIG=""
+ONLY_EXTRACT=""
+ONLY_COMPRESS=""
+ONLY_INITDB=""
+ONLY_HELP=""
+ONLY_QUERY=""
+
+#
+# Modifiers
+#
+AND_ROOT="/"
+AND_BULK="0"
+AND_VERBOSE="0"
+AND_QUIET="0"
+AND_FORCE="0"
+AND_RECURSIVE="0"
+AND_SCRIPT="1"
+AND_TRIGGERS="1"
+AND_INITRC="1"
+AND_RUNDEPS="1"
+AND_CONFLICTS="1"
+AND_LDCONFIG="1"
+AND_CONFIG="1"
+AND_OUTPUT=""
+AND_HOLD="1"
+AND_FILE="0"
+QUERY_MODE=""
+
+SHORTOPTS="ircemdDhlR:bvsfoq:n"
+LONGOPTS="install,remove,config,extract,makepkg,dbase,help,root:,bulk,silent,verbose,\
+force,noscript,notriggers,noinitrc,norundeps,noconflicts,noldconfig,noconfig,nohold,\
+output:,query:"
+
+GLOBALOPTS="$(getopt --options ${SHORTOPTS} --longoptions ${LONGOPTS} --name ${VPMSELF} -- "$@")"
+[ "$?" != "0" ] && exit >&2
+eval set -- ${GLOBALOPTS}
+
+while true
+do
+	case ${1} in
+		-i|--install   ) ONLY_INSTALL="1"       ;;
+		-r|--remove    ) ONLY_REMOVE="1"        ;;
+		-c|--config    ) ONLY_CONFIG="1"        ;;
+		-e|--extract   ) ONLY_EXTRACT="1"       ;;
+		-m|--makepkg   ) ONLY_COMPRESS="1"      ;;
+		-d|--dbase     ) ONLY_INITDB="1"        ;;
+		-h|--help      ) ONLY_HELP="1"          ;;
+		-R|--root      ) AND_ROOT="${2}"        ;;
+		-b|--bulk      ) AND_BULK="1"           ;;
+		-v|--verbose   ) AND_VERBOSE="1"        ;;
+		-s|--silent    ) AND_QUIET="1"          ;;
+		-f|--force     ) AND_FORCE="1"          ;;
+		-o|--output    ) AND_OUTPUT="${2}"      ;;
+		-q|--query     ) ONLY_QUERY="1" \
+					   QUERY_MODE="${2}"        ;;
+		--recursive    ) AND_RECURSIVE="1"      ;;
+		--noscript     ) AND_SCRIPT="0"         ;;
+		--notriggers   ) AND_TRIGGERS="0"       ;;
+		--noinitrc     ) AND_INITRC="0"         ;;
+		--norundeps    ) AND_RUNDEPS="0"        ;;
+		--noconflicts  ) AND_CONFLICTS="0"      ;;
+		--noldconfig   ) AND_LDCONFIG="0"       ;;
+		--noconfig     ) AND_CONFIG="0"         ;;
+		--nohold       ) AND_HOLD="0"           ;;
+		-- ) shift ; break                      ;;
+	esac
+	shift
+done
+
+INPUT="${@}"
+
+if [ "${AND_FORCE}" = "1" ]
+then
+	AND_RUNDEPS="0"
+	AND_CONFLICTS="0"
+fi
+
+declare -i INDEX=(
+	${ONLY_QUERY}
+	${ONLY_INSTALL}
+	${ONLY_REMOVE}
+	${ONLY_UPGRADE}
+	${ONLY_CONFIG}
+	${ONLY_EXTRACT}
+	${ONLY_COMPRESS}
+	${ONLY_INITDB}
+	${ONLY_DUMP}
+	${ONLY_HELP}
+)
+
+case ${#INDEX[@]} in
+	1 ) true ;;
+	0 ) die "$(gettext '%s need main argument')" "${VPMSELF}" ;;
+	* ) die "$(gettext 'Only one main action at the same time')" ;;
+esac
+
+[[ ${ONLY_INSTALL} || ${ONLY_REMOVE} || ${ONLY_UPGRADE} || ${ONLY_CONFIG} || ${ONLY_INITDB} ]] && \
+only_as_root "-i,--install"
+
+parse_config
+runtime_vars
+parse_def_variables
+
+if [ "${ONLY_INSTALL}" == "1" ]
+then
+	include "archive"
+	include "data"
+	include "triggers"
+	include "installf"
+
+	install_packages ${INPUT}
+elif [ "${ONLY_REMOVE}" == "1" ]
+then
+	include "data"
+	include "triggers"
+	include "remove"
+
+	remove_packages ${INPUT}
+elif [ "${ONLY_CONFIG}" == "1" ]
+then
+	include "data"
+	include "triggers"
+
+	config_packages ${INPUT}
+elif [ "${ONLY_EXTRACT}" == "1" ]
+then
+	include "archive"
+	extract_package ${INPUT}
+elif [ "${ONLY_COMPRESS}" == "1" ]
+then
+	include "archive"
+	compress_package ${INPUT}
+elif [ "${ONLY_INITDB}" == "1" ]
+then
+	init_env
+elif [ "${ONLY_QUERY}" == "1" ]
+then
+	include "data"
+	include "query"
+
+	exec_query "${VPM_DATABASE}" "${VPM_PKG_FILES}" ${QUERY_MODE} ${INPUT}
+elif [ "${ONLY_HELP}" == "1" ]
+then
+	usage
+	exit 0
+fi

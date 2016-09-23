@@ -1,0 +1,312 @@
+#!/bin/bash
+
+if ! . /etc/vpm/vpm.conf
+then
+	printf 'No %s configuration file found\n' "/etc/vpm/vpm.conf"
+	exit 1
+fi
+
+
+VPMSELF="${0}"
+VPMLIB="${VPM_VPMBUILD_HOME}"
+VPMDATA="${VPM_COMMON_HOME}"
+TEXTDOMAIN="${VPMSELF##*/}"
+TEXTDOMAINDIR="${VPM_LOCALES}"
+
+RAW_INPUT="${@}"
+
+#
+# Load essential funtions
+#
+. ${VPMLIB}/messages || exit 1
+. ${VPMDATA}/shared  || exit 1
+. ${VPMLIB}/main     || exit 1
+. /etc/vpm/make.conf || exit 1
+
+#
+# Main actions
+#
+ONLY_NEW=""
+ONLY_UPDATE=""
+ONLY_PATCH=""
+ONLY_CLEAN=""
+ONLY_BUILD=""
+ONLY_TEST=""
+ONLY_HELP=""
+ONLY_CHANGE=""
+
+#
+# Modifiers
+#
+AND_BUILDEPS="1"
+AND_USER="$(id -un)"
+AND_HOME="${HOME}"
+AND_ASROOT="0"
+AND_TEMPLATE="0"
+AND_BUILDEPS="1"
+AND_MKPKG="1"
+AND_PATCH="1"
+AND_FORCE="0"
+AND_VERBOSE="0"
+AND_QUIET="0"
+AND_DEBUG="0"
+AND_INSTALL="0"
+AND_TEST="1"
+AND_SUBPKGS=""
+AND_UPDATE="1"
+AND_CLEAN="1"
+AND_BULK="0"
+AND_ROOT="/"
+AND_SETPERM="0"
+BUILD_MODE="build"
+
+#
+# This variables will be replace only by functions
+#
+AND_LDCONFIG="1"
+AND_AUTODEPS="1"
+AND_STRIP="1"
+
+SHORTOPTS="nupcbR:ts:U:atfhvqdiN:V:CTP"
+LONGOPTS="new,update,patch,clean,bulk,root:,test,subpkgs:,user:,asroot,template,\
+force,help,verbose,quiet,debug,install,name:,version:,change,notest,noupdate,noclean,\
+nobuildeps,nomkpkg,nopatch,noldconfig,perms"
+GLOBALOPTS="$(getopt --options ${SHORTOPTS} --longoptions ${LONGOPTS} --name ${VPMSELF} -- "$@")"
+[ "$?" != "0" ] && exit >&2
+eval set -- ${GLOBALOPTS}
+
+while true
+do
+	case ${1} in
+		-n|--new      ) ONLY_NEW="1"    ;;
+		-u|--update   ) ONLY_UPDATE="1"    ;;
+		-p|--patch    ) ONLY_PATCH="1"    ;;
+		-c|--clean    ) ONLY_CLEAN="1"    ;;
+		-t|--test     ) ONLY_TEST="1"     ;;
+		-C|--change   ) ONLY_CHANGE="1" ;;
+		-h|--help     ) ONLY_HELP="1" ;;
+		-s|--subpkgs  ) AND_SUBPKGS="${2//,/ }" ;;
+		-U|--user     ) AND_USER="${2}" AND_HOME="${HOME}" ;;
+		-a|--asroot   ) AND_ASROOT="1" ;;
+		-t|--template ) AND_TEMPLATE="1" ;;
+		-f|--force    ) AND_FORCE="1" ;;
+		-v|--verbose  ) AND_VERBOSE="1" ;;
+		-q|--quiet    ) AND_QUIET="1" ;;
+		-d|--debug    ) AND_DEBUG="1" ;;
+		-i|--install  ) AND_INSTALL="1" ;;
+		-N|--name     ) AND_NAME="${2}" ;;
+		-V|--version  ) AND_VERSION="${2}" ;;
+		-b|--bulk     ) AND_BULK="1"      ;;
+		-R|--root     ) AND_ROOT="${2}"   ;;
+		-T|--noclean  ) AND_CLEAN="0" ;;
+		-P|--perms    ) AND_SETPERM="1" ;;
+		--notest      ) AND_TEST="0"  ;;
+		--noupdate    ) AND_UPDATE="0" ;;
+		--nobuildeps  ) AND_BUILDEPS="0" ;;
+		--nomkpkg     ) AND_MKPKG="0" ;;
+		--nopatch     ) AND_PATCH="0" ;;
+		--noldconfig  ) AND_LDCONFIG="0" ;;
+		-- ) shift ; break           ;;
+	esac
+	shift
+done
+FILTER_INPUT="${@}"
+
+if [ "${ONLY_TEST}" == "1" ]
+then
+	ONLY_BUILD="1"
+	ONLY_TEST=""
+	BUILD_MODE="test"
+fi
+
+declare -i INDEX=(
+	${ONLY_NEW}
+	${ONLY_UPDATE}
+	${ONLY_PATCH}
+	${ONLY_CLEAN}
+	${ONLY_BUILD}
+	${ONLY_TEST}
+	${ONLY_HELP}
+	${ONLY_CHANGE}
+)
+
+case ${#INDEX[@]} in
+	1 ) true ;;
+	0 ) ONLY_BUILD="1" ;;
+	* ) die "$(gettext 'Only one main action at the same time')" ;;
+esac
+
+[ "${AND_DEBUG}" == "1" ] && AND_VERBOSE="1"
+
+parse_config
+runtime_vars
+archive_support
+
+if [ "${ONLY_NEW}" == "1" ]
+then
+	include "net"
+	include "newbdir"
+	include "paths"
+	
+	new_buildir ${FILTER_INPUT}
+elif [ "${ONLY_UPDATE}" == "1" ]
+then
+	if [ "${AND_BULK}" == "1" ]
+	then
+		include "bulk"
+		bulk_run ${FILTER_INPUT}
+
+		for BDR in ${PROC_BUILDIRS}
+		do
+			vpmbuild --update ${BDR}
+		done
+
+		exit 0
+	fi
+
+	include "net"
+	include "data"
+	include "check"
+	include "modifiers"
+	include "cmdspec"
+	include "paths"
+	
+	search_buildir ${FILTER_INPUT}	
+	F="${VPM_FILESDIR}"
+	B="${VPM_BUILDIR}"
+	cd ${VPM_BUILDIR}
+	load ${VPM_SPECFILE} || printme -f "die" msg_fail_load "${VPM_SPECFILE}"
+	parse_def_variables
+	private_global_variables
+	private_package_variables
+	VPM_PKGNAME="${VPM_NAME}"
+	
+	for I in pkg_setup pkg_compile
+	do
+		search_and_run_non_global ${I}
+	done
+
+	update_buildir
+	exit $?
+elif [ "${ONLY_PATCH}" == "1" ]
+then
+	include "check"
+	include "data"
+	include "modifiers"
+	include "cmdspec"
+	include "paths"
+
+	VPM_BUILDIR="${PWD%/*}"
+	VPM_SPECFILE="${VPM_BUILDIR}/spec"
+	VPM_FILESDIR="${VPM_BUILDIR}/files"
+
+	load "${VPM_SPECFILE}" || printme -f "die" msg_fail_load "${VPM_SPECFILE}"
+	parse_def_variables
+	private_global_variables
+	private_package_variables
+	for I in pkg_setup pkg_compile
+	do
+		search_and_run_non_global ${I}
+	done
+	apply_patches
+elif [ "${ONLY_CLEAN}" == "1" ]
+then
+	if [ "${AND_BULK}" == "1" ]
+	then
+		include "bulk"
+		bulk_run ${FILTER_INPUT}
+
+		[ "${AND_FORCE}" == "1" ] && PARAM+=" --force"
+		for BDR in ${PROC_BUILDIRS}
+		do
+			vpmbuild --clean ${PARAM} ${BDR}
+		done
+
+		exit 0
+	fi
+
+	include "check"
+	include "modifiers"
+	include "paths"
+
+	search_buildir ${FILTER_INPUT}
+	cd ${VPM_BUILDIR}
+	load ${VPM_SPECFILE} || printme -f "die" msg_fail_load "${VPM_SPECFILE}"
+	parse_def_variables
+	private_global_variables
+	[ "${AND_FORCE}" == "1" ] && CLEANMODE="--full"
+	spec_buildir_clean --loger "msg" ${CLEANMODE} || exit 1
+elif [ "${ONLY_CHANGE}" == "1" ]
+then	
+	search_buildir ${FILTER_INPUT}
+	cd ${VPM_BUILDIR}
+	new_changelog
+elif [ "${ONLY_BUILD}" == "1" ]
+then
+	if [ "${AND_BULK}" == "1" ]
+	then
+		include "bulk"
+		bulk_run ${1}
+
+		PARAM="--asroot"
+		[ "${AND_INSTALL}" == "1" ] && PARAM+=" --install"
+		[ "${AND_ROOT}" != "/" ]    && PARAM+=" --root=${AND_ROOT}"
+		[ "${AND_SETPERM}" == "1" ] && PARAM+=" --perms"
+		
+		[ -f build.log ] && rm -f build.log
+		for BDR in ${PROC_BUILDIRS}
+		do
+			log "$(gettext '### Building %s package with %s params')" "${BDR}" "${PARAM}" 2>&1 | tee -a build.log
+			if ! vpmbuild ${PARAM} ${BDR}
+			then
+				error "$(gettext 'Failed to build %s package. Please check your buildlog')" "${BDR}" 2>&1 | tee -a build.log
+				exit 1 ; exit 1
+			else
+				log "$(gettext '%s package sucefull build ###\n')" "${BDR}" 2>&1 | tee -a build.log
+			fi
+		done
+
+		exit 0
+	fi
+
+	include "data"
+	include "check"
+	include "net"
+	include "paths"
+	include "inherit"
+	include "cmdspec"
+	include "modifiers"
+	include "auto"
+	include "autocmd"
+	include "package"
+	include "build"
+		
+	get_fakeroot_env ${0} ${RAW_INPUT} --user="${AND_USER}"
+	search_buildir "${1}"
+	load ${VPM_SPECFILE} || printme -f "die" msg_fail_load "spec"
+	
+	chdir ${VPM_BUILDIR}
+		if [ "${BUILD_MODE}" == "build" ]
+		then
+			>buildlog
+			log "$(gettext 'Running build process on %s')" "$(date +%c)" 2>&1 | tee -a buildlog
+			if [ "${AND_TEST}" == "1" ]
+			then
+				build_package --test 2>&1 | tee -a buildlog
+				[ "${PIPESTATUS[0]}" == "1" ] && exit 1
+			fi
+			build_package --${BUILD_MODE} 2>&1 | tee -a ${VPM_BUILDIR}/buildlog
+			case ${PIPESTATUS[0]} in
+				1 ) exit ${PIPESTATUS[0]} ;;
+				2 ) exit 0 ;;
+			esac				
+		else
+			log "$(gettext 'Testing buildir on %s')" "$(date +%c)"
+			build_package --test
+			exit ${PIPESTATUS[0]}
+		fi
+	backdir
+elif [ "${ONLY_HELP}" == "1" ]
+then
+	usage
+fi

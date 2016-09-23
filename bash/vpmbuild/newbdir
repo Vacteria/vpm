@@ -1,0 +1,433 @@
+#!/bin/bash
+
+print_changelog()
+{
+	local DEVNAME DEVMAIL OUTDIR
+	
+	DEVNAME="${DEF_PACKAGER_NAME:-Vacteria Packager Team}"
+	DEVMAIL="${DEF_PACKAGER_MAIL:-packages@vacteria.org}"
+	DEVMAIL="${DEVMAIL//[<,>]}"
+	OUTDIR="${1:-.}"
+	
+cat > ${OUTDIR}/changelog <<EOF
+$(date +%Y-%m-%d) ${DEVNAME} <${DEVMAIL}>
+ * Initial release
+EOF
+
+	return 0
+}
+
+print_spec()
+{
+	local OUTDIR HEADER_NAME LICENSE SECTIONS PACKAGER
+
+	OUTDIR="${1:-.}"
+	HEADER_NAME="${VPM_NAME:-generic package}"
+	LICENSE="${AND_LICENSE:-GPL V2.1}"
+	SECTIONS="${AND_SECTIONS:-contrib}"
+	validate_sections ${SECTIONS}
+	if [ -z "${AND_PACKAGER}" ]
+	then
+		if [ -n "${DEF_PACKAGER_MAIL}" ]
+		then
+			PACKAGER="${DEF_PACKAGER_NAME} <${DEF_PACKAGER_MAIL//[<,>]}>"
+		else
+			PACKAGER="${DEF_PACKAGER_NAME}"
+		fi
+
+		[ -n "${DEF_PACKAGER_NIC}" ] && PACKAGER="${PACKAGER} (${DEF_PACKAGER_NIC//[(,)]})"
+	else
+		PACKAGER="${AND_PACKAGER}"
+	fi
+	[ -z "${PACKAGER}" ] && PACKAGER="Vacteria packager team <packages@vacteria.org>"
+
+	
+	if [ "x${OUTDIR}" != "x" ]
+	then
+		cat > ${OUTDIR}/spec << EOF
+#!/bin/bash
+#
+# Spec file for ${HEADER_NAME}, created $(date +%c)
+# under GPL v2.1. All right reserved vacteria operating system
+#
+# lastbuild  : $(date +%c)
+# packager   : ${PACKAGER}
+# license    : ${LICENSE}
+#
+# ${VPM_NAME}_en :
+# ${VPM_NAME}_es :
+#
+
+NAME="${VPM_NAME}"
+VERSION="${VPM_VERSION}"
+EOF
+		cat >> ${OUTDIR}/spec << EOF
+SECTIONS="${SECTIONS}"
+SOURCES="${VPM_URL}"
+EOF
+
+case ${VPM_FUNCTION} in
+	plconfig )
+		cat >> ${OUTDIR}/spec << EOF
+BUILDEPS="perl"
+EOF
+	;;
+	pyconfig )
+		cat >> ${OUTDIR}/spec << EOF
+BUILDEPS="python"
+EOF
+	;;
+	cmakeconfig )
+		cat >> ${OUTDIR}/spec << EOF
+BUILDEPS="cmake"
+EOF
+	;;
+	kdeconfig )
+		cat >> ${OUTDIR}/spec << EOF
+BUILDEPS="cmake"
+EOF
+	;;
+esac
+
+cat >> ${OUTDIR}/spec << EOF
+
+pkg_compile()
+{
+EOF
+
+if [ "x${VPM_FUNCTION}" != "x" ]
+then
+cat >> ${OUTDIR}/spec << EOF
+	${VPM_FUNCTION}
+EOF
+fi
+
+cat >> ${OUTDIR}/spec << EOF
+	makesrc
+	installsrc
+EOF
+cat >> ${OUTDIR}/spec << EOF
+}
+EOF
+	fi
+}
+
+print_boot()
+{
+	local BOOT_FILE_NAME OUTDIR
+	
+	BOOT_FILE_NAME="${VPM_NAME:-${1}}"
+	OUTDIR="$(pwd)"
+
+	[ ! -d ${OUTDIR}/files ] && mkdir -p ${OUTDIR}/files
+	
+cat > ${OUTDIR}/files/${BOOT_FILE_NAME}.run << "EOF"
+#!/bin/sh
+#
+EOF
+cat >> ${OUTDIR}/files/${BOOT_FILE_NAME}.run << EOF
+###
+# Vacteria Operating System init script, Created on $(date +%c)
+EOF
+cat >> ${OUTDIR}/files/${BOOT_FILE_NAME}.run << "EOF"
+# This file is free software and is released under GPL v2.1 or grant.
+###
+
+### BEGIN INIT INFO
+# Provides:          service_name
+# Required-Start:    
+# Required-Stop:     
+# Should-Start:      
+# Should-Stop:       
+# X-Start-Before:    
+# X-Stop-After:      
+# Default-Start:     
+# Default-Stop:      
+# X-Interactive:     
+# X-vct-Provided-By: Vacteria
+# Short-Description: single_line_description
+# Description:       multiline_description
+### END INIT INFO
+
+. /lib/init/init-functions || exit 6
+
+rc_start()
+{
+	rc_message "My start message"
+	start_daemon /path/to/command --arguments
+	rc_return
+}
+
+rc_stop()
+{
+	rc_message "My stopt message"
+	killproc /path/to/command
+	rc_return
+}
+
+rc_restart()
+{
+	rc_stop
+	sleep 1
+	rc_start
+}
+
+rc_reload()
+{
+	rc_message "My reloading message"
+	killproc -HUP /path/to/command
+	rc_return
+}
+
+rc_status()
+{
+	statusproc /path/to/command
+}
+
+case ${1} in
+	start   ) rc_start   ;;
+	stop    ) rc_stop    ;;
+	restart ) rc_restart ;;
+	reload  ) rc_reload  ;;
+	status  ) rc_status  ;;
+	*       ) rc_error   ;;
+esac
+EOF
+}
+
+print_setup()
+{
+	local FILE_NAME OUTDIR
+	
+	FILE_NAME="${VPM_NAME:-${1}}"	
+	OUTDIR="$(pwd)"			
+	
+	[ ! -d ${OUTDIR}/files ] && mkdir -p ${OUTDIR}/files
+cat > ${OUTDIR}/files/${FILE_NAME}.setup<< EOF
+#!/bin/sh
+#
+# Plublishes under GLP V2.1 or grant, all right reserved 
+# 
+# Configuration script for vpm package.This script will be 
+# executed under install|remove|upgrade and config process 
+# with root privileges. Please be carefull
+#
+
+. /etc/vpm/vpm.conf
+. ${VPM_RUNTIME_FILE}
+
+NAME=""
+VERSION=""
+
+set_perms()
+{
+	builtin true
+}
+
+pre_install()
+{
+	builtin true
+}
+
+post_install()
+{
+	builtin true
+}
+
+pre_remove()
+{
+	builtin true
+}
+
+post_remove()
+{
+	builtin true
+}
+
+pre_upgrade()
+{
+	builtin true
+}
+
+post_upgrade()
+{
+	builtin true
+}
+
+exec_config()
+{
+	post_install
+}
+
+case \${1} in
+	prein  ) pre_install  ;;
+	postin ) post_install ;;
+	prerm  ) pre_remove   ;;
+	postrm ) post_remove  ;;
+	preup  ) pre_upgrade  ;;
+	postup ) post_upgrade ;;
+	setperm) set_perms    ;;
+	config ) exec_config  ;;
+esac
+EOF
+}
+
+new_buildir()
+{
+	local INPUT HANDLER MY_NAME MY_VERSION VPM_MINOR MY_BUILDIR MY_FILE  
+	local MY_CMD MY_CONTENT AUTOTOOLS MY_FUNCT MY_URL DELFILE X
+	
+	INPUT="${1}"
+
+	case "X${INPUT}" in
+		Xspec|Xrun|Xsetup|Xchangelog )
+			search_buildir
+			load ${VPM_SPECFILE} || printme -f "die" msg_fail_load "${VPM_SPECFILE}"
+
+			case ${INPUT} in 
+				spec      ) print_spec ;;
+				run       ) print_boot ${NAME} ;;
+				setup     ) print_setup ${NAME} ;;
+				changelog ) print_changelog ;;
+			esac
+		;;
+		X )
+			if [ "${AND_TEMPLATE}" == "1" ]
+			then
+				MY_NAME="${AND_NAME:-generic}"
+				MY_BUILDIR="$(pwd)/${MY_NAME}"
+				VPM_NAME="${MY_NAME}"
+				VPM_VERSION="${AND_VERSION:-1.0}"
+				VPM_FUNCTION="gnuconfig"
+				
+				mkdir -p ${MY_BUILDIR}/files
+				chdir ${MY_BUILDIR}
+			
+				print_spec
+				print_boot ${VPM_NAME}
+				print_setup ${VPM_NAME}
+				print_changelog
+			else
+				printme -f "die" msg_mis_args "${FUNCNAME}"
+			fi
+		;;
+		X*? )
+			case $(archive_info --proto ${INPUT}) in
+				http*|ftp*) 
+					HANDLER="${INPUT}"					
+					MY_URL="$(archive_info --url ${HANDLER})"
+				;;
+				* )
+					if [ -f "$(pwd)/${INPUT}" ]
+					then
+						HANDLER="file://$(pwd)/${INPUT}"
+						DELFILE="$(pwd)/${INPUT}"
+					else
+						die "$(gettext '"%s" does not looks like as regular file or url')" "${INPUT}"
+					fi
+				;;
+			esac
+
+			MY_NAME="$(only_lower ${AND_NAME:-$(archive_info --name ${HANDLER})})"
+			MY_VERSION="${AND_VERSION:-$(archive_info --version ${HANDLER})}"
+			MY_BUILDIR="$(pwd)/${MY_NAME}"
+			MY_FILE="$(archive_info --file ${HANDLER})"
+
+			[ -z "${MY_NAME}" ]    && die "$(gettext 'Failed to get name from "%s" file')" "${MY_FILE}"
+			[ -z "${MY_VERSION}" ] && die "$(gettext 'Failed to get version from "%s" file')" "${MY_FILE}"
+			[ -d "${MY_BUILDIR}" ]  && rm -rf ${MY_BUILDIR}
+			mkdir -p ${MY_BUILDIR}/files
+
+			chdir ${MY_BUILDIR}
+			fetch_msg "$(gettext 'Downloading')" "${MY_FILE}"
+			fetch --outfile="${MY_FILE}" ${HANDLER}
+			case $? in
+				0 ) done_msg ;;
+				* ) fail_msg ;;
+			esac
+			
+			[ -f "${DELFILE}" ] && rm -f "${DELFILE}"
+
+			MY_CMD="$(archive_info --list ${MY_FILE})"
+
+			case $(archive_info --extension ${MY_FILE}) in
+				.rar) true ;;
+				*   ) MY_CONTENT=$( ${MY_CMD} ${MY_FILE} 2>/dev/null | sed -e "s#^./##" | cut -d '/' -f 2 | sort -u | grep -Ev "^$") ;;
+			esac
+
+			[ -z "${MY_CONTENT}" ] && die "$(gettext 'The archive "%s" looks like empty')" "${MY_FILE}"
+
+			for X in ${MY_CONTENT}
+			do
+				if [ ${X} == "configure" ]
+				then
+					AUTOTOOLS="1"
+					break
+				fi
+			done
+
+			for X in ${MY_CONTENT}
+			do
+				case ${X} in
+					setup.py )
+						MY_FUNCTION="pyconfig"
+						break
+					;;
+					Makefile.PL )
+						MY_FUNCTION="plconfig"
+						break
+					;;
+					CMakeLists.txt )
+						[ "${AUTOTOOLS}" == "0" ] && MY_FUNCTION="cmakeconfig"
+						break
+					;;
+					Makefile )
+						if [ "${AUTOTOOLS}" == "0" ]; then
+							MY_FUNCTION=""
+						else
+							MY_FUNCTION="gnuconfig"
+						fi
+						break
+					;;
+					autogen.sh )
+						if [ "${AUTOTOOLS}" == "0" ]; then
+							MY_FUNCTION="gnuconfig ./autogen.sh"
+						else
+							MY_FUNCTION="gnuconfig"
+						fi
+						break					
+					;;
+					waf )
+						[ "${AUTOTOOLS}" == "0" ] && MY_FUNCTION="wafconfig"
+						break
+					;;
+					configure )
+						[ "${AUTOTOOLS}" == "1" ] && MY_FUNCTION="gnuconfig"
+						break
+					;;						
+					* )
+						MY_FUNCTION="nullconfig"
+					;;
+				esac
+			done
+
+			VPM_NAME="${MY_NAME}"
+			VPM_VERSION="${MY_VERSION}"
+			VPM_MINOR="${VPM_VERSION%.*}"
+			if [ "${VPM_VERSION}" == "${VPM_MINOR}" ]
+			then
+				VPM_MINOR=""
+			fi
+			VPM_FUNCTION="${MY_FUNCTION}"
+			VPM_URL="$(echo ${MY_URL} | sed -e 's/'${MY_VERSION}'/${VERSION}/g')"
+			if [ -n "${VPM_MINOR}" ]
+			then
+				VPM_URL="$(echo ${VPM_URL} | sed -e 's/\/'${VPM_MINOR}'\//\/$(p_minor)\//g')"
+			fi
+			print_spec
+			print_changelog
+		;;
+	esac
+	
+	return 0
+}

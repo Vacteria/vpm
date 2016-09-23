@@ -1,0 +1,614 @@
+#!/bin/bash
+
+inherit()
+{
+	local STRING VPM_AUTOTOOLS VPM_CMAKE VPM_WAF
+
+	STRING="$(only_lower ${1})"
+	if [ -z "${STRING}" ]
+	then
+		STRING="gnu"
+		msg "$(gettext 'Inherit schema is empty, using gnu by default')"
+	fi
+
+	VPM_INHERIT="${STRING}"
+	case "x${STRING}" in
+		xgnu|xcmake|xpython|xperl|xwaf|xraw|xnull|xmake|xxfce|xgnome|xgnome3|xkde|xmate|xlxde|xe16|xe17 )
+			[ -z "${VPM_SPEC_PREFIX}" ]     && VPM_SPEC_PREFIX="$(trim_slashes /${VPM_PREFIX})"
+			[ -z "${VPM_SPEC_SYSCONFDIR}" ] && VPM_SPEC_SYSCONFDIR="$(trim_slashes /${VPM_SYSCONF})"
+		;;
+		* )
+			die "$(gettext 'Unsupported inherit schema %s')" "${STRING}"
+		;;		
+	esac
+	
+
+	# have so much problems with many packages.
+	#
+	# --docdir=${VPM_SPEC_PREFIX}/share/doc/${VPM_PKGNAME}-${VPM_PKGVERSION}
+	#
+
+	VPM_AUTOTOOLS="
+		--prefix=${VPM_SPEC_PREFIX} \
+		--libdir=${VPM_SPEC_PREFIX}/lib \
+		--libexecdir=${VPM_SPEC_LIBEXECDIR} \
+		--mandir=${VPM_SPEC_PREFIX}/share/man \
+		--infodir=${VPM_SPEC_PREFIX}/share/info \
+		--sysconfdir=${VPM_SPEC_SYSCONFDIR} \
+		--localstatedir=/var \
+		--enable-shared \
+		--disable-static \
+		--disable-debug \
+		--program-prefix="" \
+		--program-suffix="" \
+		--disable-dependency-tracking \
+		--build="${VPM_PKGTRIPLET}"
+	"
+
+	VPM_CMAKE="
+		-DCMAKE_INSTALL_PREFIX:PATH=${VPM_SPEC_PREFIX} \
+		-DSYSCONF_INSTALL_DIR:PATH=${VPM_SPEC_SYSCONFDIR} \
+		-DLIBEXEC_INSTALL_DIR:PATH=${VPM_LIBEXECDIR} \
+		-DLIB_INSTALL_DIR:PATH=${VPM_SPEC_PREFIX}/lib \
+		-DCMAKE_BUILD_TYPE=Release \
+		-DLIB_SUFFIX= \
+		-DLIB_PREFIX= \
+		-DBUILD_SHARED_LIBS:BOOL=ON \
+		-DBUILD_STATIC_LIBS:BOOL=OFF \
+		-DSITE=vacteria.org
+	"
+
+	VPM_WAF="
+		configure \
+		--prefix=${VPM_SPEC_PREFIX} \
+		--sysconfdir=${VPM_SPEC_SYSCONFDIR} \
+		--libexecdir=${VPM_LIBEXECDIR} \
+		--libdir=${VPM_SPEC_PREFIX}/lib \
+		--mandir=${VPM_SPEC_PREFIX}/share/man \
+		--infodir=${VPM_SPEC_PREFIX}/share/info \
+		--localstatedir=/var
+	"
+
+	VPM_PERL="Makefile.PL INSTALLDIRS=vendor"
+	VPM_PYTHON="setup.py build"
+
+	case ${VPM_INHERIT} in
+		gnu|gnome|gnome3|mate|lxde|e16|e17|xfce|null) 
+			VPM_CONFIG_CMD="./configure" 
+		;;
+		kde|cmake )        VPM_CONFIG_CMD="cmake .." ;;
+		python )             VPM_CONFIG_CMD="python" ;;
+		perl )               VPM_CONFIG_CMD="perl" ;;
+		waf )                VPM_CONFIG_CMD="./waf" ;;
+		raw )                VPM_CONFIG_CMD="" ;;
+		make )               VPM_CONFIG_CMD="make" ;;
+	esac
+
+	case ${VPM_INHERIT} in
+		gnu|gnome3|lxde|e16|e17)
+			VPM_CONFIG="${VPM_AUTOTOOLS} "
+		;;
+		gnome|mate )
+			VPM_CONFIG="
+				${VPM_AUTOTOOLS} \
+				--disable-update-mimedb \
+				--disable-scrollkeeper \
+				--disable-schemas-install \
+				--with-gconf-schema-file-dir=${VPM_SPEC_SYSCONFDIR}/gconf/schemas
+			"
+		;;
+		xfce )
+			VPM_CONFIG="
+				${VPM_AUTOTOOLS} \
+				--with-html-dir=${VPM_SPEC_PREFIX}/share/doc/${VPM_PKGNAME}/html \
+				--enable-gio-unix
+			"
+		;;
+		cmake|kde )
+			VPM_CONFIG="${VPM_CMAKE}"
+		;;
+		python )
+			VPM_CONFIG="${VPM_PYTHON}"
+		;;
+		perl )
+			VPM_CONFIG="${VPM_PERL}"
+		;;
+		waf )
+			VPM_CONFIG="${VPM_WAF}"
+		;;
+		null|raw|make )
+			VPM_CONFIG=""
+		;;
+	esac
+
+	return 0
+}
+
+print_gcc_flags()
+{
+	if [ "${VPM_PKGMAKEFLAGS}" == "1" ]	
+	then
+		case ${VPM_INHERIT} in
+			perl|python|raw ) return 0 ;;
+			* )
+				cat >> ${INHERIT_CONFIG_FILE} << OTF
+CFLAGS="${VPM_PKGCFLAGS}" \\
+CXXFLAGS="${VPM_PKGCXXFLAGS}" \\
+OTF
+				if [ -n "${VPM_PKGCPPFLAGS}" ]
+				then
+					cat >> ${INHERIT_CONFIG_FILE} << OTF
+CPPFLAGS="${VPM_PKGCPPFLAGS}" \\
+OTF
+				fi
+			;;
+		esac
+	fi
+
+	return 0
+}
+
+print_gcc_ldflags()
+{
+	local LOCAL_FLAGS
+
+	if [ "${VPM_SYSTEM}" == "toolchain" ]
+	then
+		LOCAL_FLAGS="${VPM_PKGLDFLAGS} ${VPM_TOOLCHAIN_LD}"
+	else
+		LOCAL_FLAGS="${VPM_PKGLDFLAGS}"
+	fi
+	
+	if [ "${VPM_PKGMAKEFLAGS}" == "1" ]
+	then
+		case ${VPM_INHERIT} in
+			perl|python|raw ) return 0 ;;
+			* )
+cat >> ${INHERIT_CONFIG_FILE} << OTF
+LDFLAGS="${LOCAL_FLAGS}" \\
+OTF
+			;;
+		esac
+	fi
+
+	return 0
+}
+
+print_user_cc()
+{
+	[ "${VPM_INHERIT}" == "raw" ] && return 0
+	
+	if [ -n "${VPM_TOOLCHAIN_CC}" ]
+	then
+cat >> ${INHERIT_CONFIG_FILE} << OTF
+CC="${VPM_TOOLCHAIN_CC}" \\
+OTF
+	fi
+
+	if [ -n "${VPM_TOOLCHAIN_CXX}" ]
+	then
+cat >> ${INHERIT_CONFIG_FILE} << OTF
+CXX="${VPM_TOOLCHAIN_CXX}" \\
+OTF
+	fi
+
+	return 0
+}
+
+print_before_config()
+{
+	[ "${VPM_INHERIT}" == "raw" ] && return 0
+
+	if [ -n "${VPM_PKGBCONFIG}" ]
+	then
+cat >> ${INHERIT_CONFIG_FILE} << OTF
+${VPM_PKGBCONFIG} \\
+OTF
+	fi
+
+	return 0
+}
+
+src_config()
+{
+	local VPM_PROBE_CMD VPM_NEW_CONFIG VPM_INHERIT_OPTS LCOUNT VALID
+
+	VALID=(
+		"perl" "perl5" "python" "python2" "python3" "cmake" 
+		"make" "gmake" "configure" "Configure" "Config" 
+		"config" "autogen.sh" "waf" "bootstrap" "Bootstrap" 
+		"boost" "Boost"
+	)
+
+	VPM_PROBE_CMD="${1}"
+	if [ "$(echo ${VPM_PROBE_CMD} | gawk -F= '{print NF}')" -eq "1" ]
+	then
+		if ! is_part_of "${VPM_PROBE_CMD##*/}" "${VALID[@]}"
+		then
+			VPM_CONFIG_CMD="${VPM_PROBE_CMD}"
+			shift 1
+		fi
+	fi
+
+	VPM_NEW_CONFIG="${@}"
+	[ "x${VPM_CONFIG_CMD}" == "x" ] && die "$(gettext 'Failed to set any configuration command')"
+
+cat >> ${INHERIT_CONFIG_FILE} << OTF
+LANG=POSIX
+OTF
+
+	if [ "${VPM_INHERIT}" != "raw" ]
+	then
+		case ${VPM_INHERIT} in
+			cmake|kde )
+				cat >> ${INHERIT_CONFIG_FILE} <<OTF
+mkdir -p vpm-build
+cd vpm-build
+
+OTF
+			;;
+		esac
+
+		print_user_cc
+		print_gcc_flags
+		print_gcc_ldflags
+	fi
+	print_before_config
+	
+	case ${VPM_INHERIT} in
+		perl )
+cat >> ${INHERIT_CONFIG_FILE} << OTF
+${VPM_PKGBCONFIG} ${VPM_CONFIG_CMD} ${VPM_CONFIG} CCCDLFLAGS="${VPM_PKGCFLAGS}" ${VPM_NEW_CONFIG}
+OTF
+			return 0
+		;;
+		python )
+cat >> ${INHERIT_CONFIG_FILE} << OTF
+${VPM_PKGBCONFIG} ${VPM_CONFIG_CMD} ${VPM_CONFIG} ${VPM_NEW_CONFIG}
+OTF
+			return 0
+		;;
+		make )
+cat >> ${INHERIT_CONFIG_FILE} <<EOF
+${VPM_CONFIG_CMD} ${VPM_NEW_CONFIG}
+EOF
+		return 0
+		;;
+	esac
+
+	if [ -n "${VPM_CONFIG_CMD}" ]
+	then
+cat >> ${INHERIT_CONFIG_FILE} << OTF
+${VPM_CONFIG_CMD} \\
+OTF
+	fi
+
+	VPM_INHERIT_OPTS="$(echo "${VPM_CONFIG}" | tr -d '\t' | tr -d '\n')"
+	for OPT in ${VPM_INHERIT_OPTS}
+	do
+cat >> ${INHERIT_CONFIG_FILE} << OTF
+${OPT} \\
+OTF
+	done
+
+	for NEW in ${VPM_NEW_CONFIG}
+	do
+		IN_OPT="${NEW%=*}"
+		IN_VAL="${NEW#*=}"
+		[ "${IN_OPT}" == "${IN_VAL}" ] && IN_VAL=""
+
+		case ${IN_OPT} in
+			--enable-static | --disable-shared )
+				sed -i \
+				-e '/--disable-static*/d' \
+				-e '/--enable-static*/d' ${INHERIT_CONFIG_FILE}
+			;;
+			--enable-shared | --disable-static )
+				sed -i \
+				-e '/--disable-shared*/d' \
+				-e '/--enable-shared*/d' ${INHERIT_CONFIG_FILE}
+			;;
+			--enable-debug | --disable-debug )
+				sed -i \
+				-e '/--disable-debug*/d' \
+				-e '/--enable-debug*/d' ${INHERIT_CONFIG_FILE}
+			;;
+		esac
+
+		if [ -n "${IN_VAL}" ]
+		then
+			if [ -n "$(grep -E -- "^${IN_OPT}" ${INHERIT_CONFIG_FILE})" ]
+			then
+				sed -i -e 's#'${IN_OPT}'=.*#'${IN_OPT}'='${IN_VAL}' \\#g' ${INHERIT_CONFIG_FILE}
+			else
+cat >> ${INHERIT_CONFIG_FILE} << OTF
+${NEW} \\
+OTF
+			fi
+		else
+cat >> ${INHERIT_CONFIG_FILE} << OTF
+${NEW} \\
+OTF
+		fi
+	done
+
+	LCOUNT="$(wc -l ${INHERIT_CONFIG_FILE} | cut -d ' ' -f1 | tr -d ' ')"	
+	if [ "${LCOUNT}" -gt "0" ]
+	then
+		sed -i -e ''${LCOUNT}' s/\\//g' ${INHERIT_CONFIG_FILE}
+	fi
+	
+	if [ -n "${VPM_PKGUOPTS}" ]
+	then
+		for X in ${VPM_PKGUOPTS}
+		do
+			sed -i -e '/'${X}'/d' ${INHERIT_CONFIG_FILE}
+		done
+	fi
+	
+	return 0
+}
+
+src_make()
+{
+	VPM_PROBE_CMD="${1}"
+	case ${VPM_PROBE_CMD##*/} in
+		make* )
+			if commander ${VPM_PROBE_CMD##*/}
+			then
+				VPM_PKGMAKECMD="${VPM_PROBE_CMD}"
+				shift 1
+			fi
+		;;
+	esac
+
+	[ -f "${INHERIT_MAKE_FILE}" ] && rm -f ${INHERIT_MAKE_FILE}
+
+cat > ${INHERIT_MAKE_FILE} << OTF
+LANG=POSIX
+OTF
+
+	case "x${VPM_INHERIT}" in
+		xpython | xmake )
+			log "$(gettext 'Nothing to do using "%s" inherit')" "${VPM_INHERIT}"
+			return 0
+		;;
+		x )
+			if [ "${VPM_PKGMAKEFLAGS}" == "1" ]
+			then
+cat >> ${INHERIT_MAKE_FILE} << OTF
+${VPM_PKGBMAKE} CFLAGS="${VPM_PKGCFLAGS}" CXXFLAGS="${VPM_PKGCXXFLAGS}" ${VPM_PKGMAKECMD} ${@}
+OTF
+			else
+cat >> ${INHERIT_MAKE_FILE} << OTF
+${VPM_PKGBMAKE} ${VPM_PKGMAKECMD} ${@}
+OTF
+			fi
+		;;
+		x?* )
+			case "${VPM_INHERIT}" in
+				waf ) VPM_PKGMAKECMD="./waf build" ;;
+			esac
+cat >> ${INHERIT_MAKE_FILE} << OTF
+${VPM_PKGBMAKE} ${VPM_PKGMAKECMD} ${@}
+OTF
+		;;
+
+	esac
+
+	printf "###### %s \n" "RUN MAKE"
+	cat ${INHERIT_MAKE_FILE}
+	printf "###### %s \n" "END MAKE"
+	. ./${INHERIT_MAKE_FILE} || return 1
+
+	return 0
+}
+
+src_make_test()
+{
+	case ${VPM_INHERIT} in 
+		perl ) VPM_PKGMAKETEST="1" ;;
+	esac
+
+	[ -f "${INHERIT_MAKE_TEST_FILE}" ] && rm -f ${INHERIT_MAKE_TEST_FILE}
+
+cat > ${INHERIT_MAKE_TEST_FILE} << OTF
+LANG=POSIX
+OTF
+
+	if [ "${VPM_PKGMAKETEST}" == "1" ]
+	then
+cat >> ${INHERIT_MAKE_TEST_FILE} << OTF
+make test
+OTF
+		printf "###### %s \n" "RUN MAKE TEST"
+		cat ${INHERIT_MAKE_TEST_FILE}
+		printf "###### %s \n" "END MAKE TEST"
+		. ./${INHERIT_MAKE_FILE} || return 1
+	fi
+
+	return 0
+}
+
+src_install()
+{
+	[ -f ${INHERIT_INSTALL_FILE} ] && rm -f ${INHERIT_INSTALL_FILE}
+
+cat > ${INHERIT_INSTALL_FILE} << OTF
+LANG=POSIX
+OTF
+
+	case ${VPM_INHERIT} in
+		python )
+cat >> ${INHERIT_INSTALL_FILE} << OTF
+${VPM_PKGBINSTALL} ${VPM_CONFIG_CMD} setup.py install --root=${VPM_PKGDESTDIR} ${@}
+OTF
+		;;
+		* )
+			case ${VPM_INHERIT} in
+				waf ) VPM_PKGINSTCMD="./waf install --destdir=${VPM_PKGDESTDIR}" ;;
+			esac
+cat >> ${INHERIT_INSTALL_FILE} << OTF
+${VPM_PKGBINSTALL} ${VPM_PKGINSTCMD} ${@}
+OTF
+		;;
+	esac
+
+	printf "###### %s \n" "RUN MAKE INSTALL"
+	cat ${INHERIT_INSTALL_FILE}
+	printf "###### %s \n" "END MAKE INSTALL"
+	. ./${INHERIT_INSTALL_FILE} || return 1
+
+	return 0
+}
+
+#
+# Copatibility with old spec format
+#
+
+run_inherit()
+{
+	local INHERIT="${1}"
+	shift 1
+	local OPTS="${@}"
+
+	[ -f "${INHERIT_CONFIG_FILE}" ] && rm -f ${INHERIT_CONFIG_FILE}
+
+	inherit ${INHERIT}
+
+	src_config ${OPTS} || return 1
+	printf "###### %s \n" "RUN CONFIG OPTIONS"
+	cat ./${INHERIT_CONFIG_FILE}
+	printf "###### %s \n" "END CONFIG OPTIONS"
+
+	. ./${INHERIT_CONFIG_FILE} || return 1
+
+	return 0
+}
+
+gnumake()
+{
+	run_inherit make ${@} || printme -f "die" msg_fail_func "${FUNCNAME}" 
+
+	return 0
+}
+
+rawconfig()
+{
+	run_inherit raw ${@} || printme -f "die" msg_fail_func "${FUNCNAME}" 
+	
+	return 0
+}
+
+nullconfig()
+{
+	run_inherit null ${@} || printme -f "die" msg_fail_func "${FUNCNAME}" 
+
+	return 0
+}
+
+gnuconfig()
+{
+	run_inherit gnu ${@} || printme -f "die" msg_fail_func "${FUNCNAME}" 
+
+	return 0
+}
+
+gnomeconfig()
+{
+	run_inherit gnome ${@} || printme -f "die" msg_fail_func "${FUNCNAME}" 
+
+	return 0
+}
+
+gnome3config()
+{
+	run_inherit gnome ${@} || printme -f "die" msg_fail_func "${FUNCNAME}" 
+
+	return 0
+}
+
+xfceconfig()
+{
+	run_inherit xfce ${@} || printme -f "die" msg_fail_func "${FUNCNAME}" 
+
+	return 0
+}
+
+kdeconfig()
+{
+	run_inherit kde ${@} || printme -f "die" msg_fail_func "${FUNCNAME}" 
+
+	return 0
+}
+
+mateconfig()
+{
+	run_inherit gnome ${@} || printme -f "die" msg_fail_func "${FUNCNAME}" 
+
+	return 0
+}
+
+lxdeconfig()
+{
+	run_inherit gnome ${@} || printme -f "die" msg_fail_func "${FUNCNAME}" 
+
+	return 0
+}
+
+e16config()
+{
+	run_inherit gnome ${@} || printme -f "die" msg_fail_func "${FUNCNAME}" 
+
+	return 0
+}
+
+e17config()
+{
+	run_inherit gnome ${@} || printme -f "die" msg_fail_func "${FUNCNAME}" 
+
+	return 0
+}
+
+cmakeconfig()
+{
+	run_inherit cmake ${@} || printme -f "die" msg_fail_func "${FUNCNAME}" 
+
+	return 0
+}
+
+plconfig()
+{
+	run_inherit perl ${@} || printme -f "die" msg_fail_func "${FUNCNAME}" 
+
+	return 0
+}
+
+pyconfig()
+{
+	run_inherit python ${@} || printme -f "die" msg_fail_func "${FUNCNAME}" 
+
+	return 0
+}
+
+wafconfig()
+{
+	run_inherit waf ${@} || printme -f "die" msg_fail_func "${FUNCNAME}" 
+
+	return 0
+}
+
+makesrc()
+{
+	src_make "${@}"      || printme -f "die" msg_fail_func "${FUNCNAME}" 
+	src_make_test "${@}" || printme -f "die" msg_fail_func "${FUNCNAME}" 
+
+	return 0
+}
+
+installsrc()
+{
+	src_install "${@}" || printme -f "die" msg_fail_func "${FUNCNAME}" 
+
+	return 0
+}

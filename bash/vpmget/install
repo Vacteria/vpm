@@ -1,0 +1,214 @@
+#!/bin/bash
+
+found_and_append_cond()
+{
+	local INPUT ALT I X
+	
+	INPUT="${1}"
+	
+	for X in ${INPUT//|/ }
+	do
+		if vpmqdb -sqf ${VPM_DATABASE} ${X}
+		then
+			return 0
+		fi
+	done
+	
+	for X in ${INPUT//|/ }
+	do
+		for I in ${RAW_LIST[@]}
+		do
+			LOCAL_PATH=$(path_to_url ${I})
+			for A in ${USE_DATA}
+			do
+				FOUND="0"
+				KEY=$(vpmqdb -sf ${VPM_DATA_DIR}/${LOCAL_PATH}/${A} ${IN} 2>/dev/null)
+				if [ -n "${KEY}" ]
+				then						
+					MYKEY="${KEY%|*}"
+					MYVAL="${KEY#*|}"
+
+					TO_INSTALL["${MYKEY}"]+="${I}|${MYVAL}"						
+					PKGFILE="${VPM_DATA_DIR}/${LOCAL_PATH}/manifest/${MYVAL}.meta"
+					read_db_dates ${PKGFILE}
+					for X in ${DB_VPM_RUNDEPS}
+					do
+						[ -n "${TO_INSTALL[${X}]}" ] && continue
+						${FUNCNAME} ${X}
+					done
+					FOUND="1"
+					break
+				fi
+			done
+				
+			if [ "${FOUND}" == "0" ]
+			then
+				NOT_FOUND+=("${IN}")
+			else
+				break
+			fi
+		done
+	done
+			
+	return 0
+}
+
+found_and_append()
+{
+	local INPUT="${@}"
+	local FOUND="0"
+	local I IN A X
+	
+	for IN in ${INPUT}
+	do
+		case ${IN} in
+			*\|* )
+				found_and_append_cond "${IN}"
+			;;
+		esac
+		
+		if vpmqdb -sqf ${VPM_DATABASE} ${IN} 
+		then
+			continue
+		else		
+			for I in ${RAW_LIST[@]}
+			do
+				LOCAL_PATH=$(path_to_url ${I})
+				for A in ${USE_DATA}
+				do
+					FOUND="0"
+					KEY=$(vpmqdb -sf ${VPM_DATA_DIR}/${LOCAL_PATH}/${A} ${IN} 2>/dev/null)
+					if [ -n "${KEY}" ]
+					then						
+						MYKEY="${KEY%|*}"
+						MYVAL="${KEY#*|}"
+
+						TO_INSTALL["${MYKEY}"]+="${I}|${MYVAL}"						
+						PKGFILE="${VPM_DATA_DIR}/${LOCAL_PATH}/manifest/${MYVAL}.meta"
+						read_db_dates ${PKGFILE}
+						for X in ${DB_VPM_RUNDEPS}
+						do
+							[ -n "${TO_INSTALL[${X}]}" ] && continue
+							${FUNCNAME} ${X}
+						done
+						FOUND="1"
+						break
+					fi
+				done
+				
+				if [ "${FOUND}" == "0" ]
+				then
+					NOT_FOUND+=("${IN}")
+				else
+					break
+				fi
+			done
+		fi
+	done
+	
+	return 0
+}
+
+install_packages()
+{
+	if ! parse_mirrors
+	then
+		die "$(gettext 'No mirros enabled')"
+	fi
+	
+	VPM_PKG_ARCH="$(get_pkgarch)"
+	USE_DATA="${VPM_PKG_ARCH}.db noarch.db"
+	
+	declare -A TO_INSTALL
+	found_and_append ${@}
+
+	if [ ${#NOT_FOUND[@]} -gt 0 ]
+	then
+		error "$(gettext 'The next packages not found on repos')"
+		echo ${NOT_FOUND[@]}
+		return 1
+	fi
+	
+	if [ "${AND_PRINT}" == "1" ]
+	then
+		echo ${TO_INSTALL[@]}
+		return 0
+	fi
+	
+	if [ ${#TO_INSTALL[@]} -gt 1 ]
+	then
+		msg "$(gettext 'The next packages will be installed :\n')" 
+		printf '%s ' "${!TO_INSTALL[@]}"
+		msg "$(gettext '\nDo you want to continue ? [y|n]')"
+		read ANSWER
+		
+		case ${ANSWER} in
+			y ) true ;;
+			* ) 
+				printme -f "msg" msg_aborting 
+				return 0
+			;;
+		esac
+	elif [ ${#TO_INSTALL[@]} -eq 0 ]
+	then
+		msg "$(gettext 'Nothing to do')"
+		return 0
+	fi
+				
+	for I in ${!TO_INSTALL[@]}
+	do
+		MYKEY="${I}"
+		MYVAL="${TO_INSTALL[$I]}"
+		MYREMOTE="${MYVAL%|*}"
+		MYLOCAL="$(path_to_url ${MYREMOTE})"
+		MYPATH="${MYVAL#*|}"
+		MYFILE="${MYPATH##*/}"
+		MYPKG="${MYREMOTE}/${MYPATH}"
+		MYMD5="${VPM_DATA_DIR}/${MYLOCAL}/manifest/${MYPATH}.md5"
+		MYURL="${MYREMOTE}/${MYPATH}"
+
+		if [ ! -f "${VPM_CACHE_DIR}/${MYFILE}" ]
+		then
+			msg "$(gettext 'Downloading %s ...')" ${MYFILE}
+			fetch ${MYURL} -o ${VPM_CACHE_DIR}/${MYFILE} || exit 1
+		fi
+		
+		if [ ! -f "${VPM_CACHE_DIR}/${MYFILE}.md5" ]
+		then
+			fetch file://${MYMD5} -o ${VPM_CACHE_DIR}/${MYFILE}.md5 || exit 1
+		fi
+	done
+
+	{ cd ${VPM_CACHE_DIR}
+		msg "$(gettext 'Testing md5 packages')"
+		for I in ${!TO_INSTALL[@]}
+		do
+			MYKEY="${I}"
+			MYVAL="${TO_INSTALL[$I]}"
+			MYPATH="${MYVAL#*|}"
+			MYFILE="${MYPATH##*/}"
+						
+			msg "$(gettext 'Processing %s package')" "${MYFILE}"
+			if ! md5sum --quiet --check ${MYFILE}.md5
+			then
+				error "$(gettext '%s sumatory file does not match')"
+				return 1
+			fi
+		done;
+	} || exit 1
+				
+	for I in ${!TO_INSTALL[@]}
+	do
+		MYKEY="${I}"
+		MYVAL="${TO_INSTALL[$I]}"
+		MYPATH="${MYVAL#*|}"
+		MYFILE="${MYPATH##*/}"
+		
+		vpm --root=${AND_ROOT} --install --notriggers --noscript --norundeps --noconflicts --noinitrc ${VPM_CACHE_DIR}/${MYFILE} || return 1
+	done
+				
+	for I in ${!TO_INSTALL[@]}
+	do
+		vpm --config ${I}
+	done
+}

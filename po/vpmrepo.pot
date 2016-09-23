@@ -1,0 +1,114 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR THE PACKAGE'S COPYRIGHT HOLDER
+# This file is distributed under the same license as the PACKAGE package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: PACKAGE VERSION\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2012-12-24 00:03-0600\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"Language: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=CHARSET\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+#: bash/vpmrepo/messages:5
+msgid ""
+"Usage : \n"
+" %s [options] [buildir]\n"
+" \n"
+"Options :\n"
+" -c, --create    Create repo struct with unsorted vpm packages found\n"
+" -b, --build     Build a vpm repo with a valid srted struct \n"
+" -a, --add       Add individual package(s) to a repo\n"
+" -r, --remove    Delete individual package(s) from repo\n"
+" -u, --update    Update indivdual package(s) from repo\n"
+" -o, --orig      Especified origin directory\n"
+" -d, --dest      With -c, especified output directory\n"
+" -p, --packages  With -a,r,u set packages to process\n"
+" -v, --verbose\n"
+" -d, --silent\n"
+" -h, --help\n"
+" "
+msgstr ""
+
+#: bash/vpmrepo/messages:31
+msgid "Failed to download %s"
+msgstr ""
+
+#: bash/vpmrepo/messages:54
+msgid "Invalid \"%s\" function"
+msgstr ""
+
+#: bash/vpmrepo/messages:60
+msgid "Missing arguments"
+msgstr ""
+
+#: bash/vpmrepo/messages:61
+msgid "Too many arguments"
+msgstr ""
+
+#: bash/vpmrepo/messages:62
+msgid "Missing %s file"
+msgstr ""
+
+#: bash/vpmrepo/messages:63
+msgid "Missing %s directory"
+msgstr ""
+
+#: bash/vpmrepo/messages:64
+msgid "Failed to load \"%s\" file"
+msgstr ""
+
+#: bash/vpmrepo/messages:65
+msgid "No directory to back found"
+msgstr ""
+
+#: bash/vpmrepo/main:10 bash/vpmrepo/main:66
+msgid "Unable to use %s directory packages directory"
+msgstr ""
+
+#: bash/vpmrepo/main:11
+msgid "Unable to use %s directory as repo"
+msgstr ""
+
+#: bash/vpmrepo/main:18
+msgid "No packages found in %s"
+msgstr ""
+
+#: bash/vpmrepo/main:33
+msgid "%s have %s no valid package name"
+msgstr ""
+
+#: bash/vpmrepo/main:41
+msgid "%s have %s no valid arch"
+msgstr ""
+
+#: bash/vpmrepo/main:47
+msgid "Copying %s file to repo dir"
+msgstr ""
+
+#: bash/vpmrepo/main:52
+msgid "%s package was copied to repo"
+msgstr ""
+
+#: bash/vpmrepo/main:55
+msgid "%s package does NOT copied to repo"
+msgstr ""
+
+#: bash/vpmrepo/main:81
+msgid "No valid archs found inside %s"
+msgstr ""
+
+#: bash/vpmrepo/main:104
+msgid "Invalid package name format %s\\n"
+msgstr ""
+
+#: bash/vpmrepo/main:120
+msgid "%s package added"
+msgstr ""

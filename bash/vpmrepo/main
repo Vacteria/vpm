@@ -1,0 +1,130 @@
+#!/bin/bash
+
+create_repo()
+{
+	local count fcount P C F
+	
+	AND_ORIG="$(get_full_path "${AND_ORIG}")"
+	AND_DEST="$(get_full_path "${AND_DEST}")"
+	
+	[ "${AND_ORIG}" == "/" ] && die "$(gettext 'Unable to use %s directory packages directory')" "${AND_ORIG}"
+	[ "${AND_DEST}" == "/" ] && die "$(gettext 'Unable to use %s directory as repo')" "${AND_DEST}"
+			
+	[ ! -d "${AND_ORIG}" ] && printme -f "die" msg_mis_dir "${AND_ORIG}"
+	[ ! -d "${AND_DEST}" ] && mkdir -p "${AND_DEST}"
+	
+	PKGS=$(find . -type f -name "*.vpm")
+	
+	[ -z "${PKGS}" ] && die "$(gettext 'No packages found in %s')" "${AND_ORIG}"
+	
+	for D in ${VPM_VALID_PKGARCHS[@]}
+	do
+		mkdir -p ${AND_DEST}/${D}
+	done
+	
+	count="0"
+	fcount="0"
+	for P in ${PKGS}
+	do
+		read_pkg_dates ${P}
+		
+		if ! check_package_name "${VPM_PKG_FILE}"
+		then
+			error "$(gettext '%s have %s no valid package name')" "${VPM_PKG_NAME}" "${VPM_PKG_FILE}"
+			let fcount = "count +1"
+			F+=("${VPM_PKG_FILE}")
+			continue
+		fi
+		
+		if is_part_of "${VPM_PKGARCH}" "${VPM_VALID_PKGARCHS[@]}"
+		then
+			error "$(gettext '%s have %s no valid arch')" "${VPM_PKG_NAME}" "${VPM_PKGARCH}"
+			let fcount="fcount +1"
+			F+=("${VPM_PKG_FILE}")
+			continue
+		fi
+		
+		log "$(gettext 'Copying %s file to repo dir')" "${VPM_PKG_FILE}"
+		cp -af ${P} ${AND_DEST}/${VPM_PKGARCH}
+		let count="count +1"
+	done
+	
+	msg "$(gettext '%s package was copied to repo')" "${count}"
+	if [ "${fcount}" -gt "0" ]
+	then
+		msg "$(gettext '%s package does NOT copied to repo')" "${fcount}"
+		printf ${F[@]}
+		return 1
+	fi
+	
+	return 0
+}
+
+build_repo()
+{
+	AND_ORIG="$(get_full_path "${AND_ORIG}")"
+	[ "${AND_ORIG}" == "/" ] && die "$(gettext 'Unable to use %s directory packages directory')" "${AND_ORIG}"
+	[ ! -d "${AND_ORIG}" ] && printme -f "die" msg_mis_dir "${AND_ORIG}"
+	
+	for A in ${VPM_VALID_PKGARCHS[@]}
+	do
+		if [ -d "${AND_ORIG}/${A}" ]
+		then
+			if [ -n "$(ls -1 ${AND_ORIG}/${A}/)" ]
+			then
+				ARCHS_FOUND+=(${A})
+			else
+				rmdir ${AND_ORIG}/${A}
+			fi
+		fi
+	done
+	(( ${#ARCHS_FOUND[@]} < 1 )) && die "$(gettext 'No valid archs found inside %s')" "${AND_ORIG}"
+	
+	msg "Compiling repo with %s directory" "${AND_ORIG}"
+	
+	DATADIR="${AND_ORIG}/data"
+	MANIFEST="${DATADIR}/manifest"
+	
+	[ -d "${MANIFEST}" ] && rm -rf "${MANIFEST}"
+	mkdir -p "${MANIFEST}"
+	
+	for A in ${ARCHS_FOUND[@]}
+	do
+		[ -f "${DATADIR}/${A}.db.gz" ] && rm -f ${DATADIR}/${A}.db.gz
+		vpmqdb -cf ${DATADIR}/${A}.db
+		
+		VPM=($(only_uniq "$(find ${AND_ORIG}/${A} -type f -name "*.vpm")"))
+		for V in ${VPM[@]}
+		do
+			V="$(trim_trailing ${V})"
+
+			read_pkg_dates ${V}
+			if ! check_package_name ${V}
+			then
+				error "$(gettext 'Invalid package name format %s\n')" "${VPM_PKG_FILE}"
+				continue
+			fi
+			
+			INPATH="${V##*${AND_ORIG}/}"
+			FILENAME="${V##*/}"
+			DIRNAME="${V%/*}"
+			if vpmqdb -if "${DATADIR}/${A}.db" "${VPM_PKG_NAME}" "${INPATH}"
+			then
+				mkdir -p ${MANIFEST}/${INPATH%/*}
+				pushd ${DIRNAME} &>/dev/null 
+					{ tar -xOf - package; } < ${FILENAME} > ${FILENAME}.meta
+					cat ${FILENAME}.meta > ${MANIFEST}/${INPATH%/*}/${FILENAME}.meta
+					md5sum ${FILENAME}  > ${FILENAME}.md5
+					cat ${FILENAME}.md5 > ${MANIFEST}/${INPATH%/*}/${FILENAME}.md5
+				popd &>/dev/null
+				log "$(gettext '%s package added')" "${VPM_PKG_FILE}"
+			fi
+		done
+		
+		gzip -9 ${DATADIR}/${A}.db
+	done
+
+	tar -C ${MANIFEST} -czf ${MANIFEST}.tar.gz .
+	rm -rf ${MANIFEST}
+}
+

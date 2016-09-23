@@ -1,0 +1,269 @@
+#!/bin/bash
+
+add_setup()
+{
+	local INS=""
+	local PN="${VPM_PKGNAME}"
+	local REAL_INS=""
+	
+	if [ "${VPM_MULTIPACK}" == "1" ]
+	then
+		if [ -n "${VPM_PKGFILESNAME}" ]
+		then
+			INS="${VPM_FILESDIR}/${VPM_PKGFILESNAME}.setup"
+		else
+			INS="${VPM_FILESDIR}/${PN}.setup"
+		fi
+
+		if [ -f "${INS}" ]
+		then
+			INS="${INS}"
+		else
+			INS=""
+		fi
+	else
+		INS="$(find ${VPM_FILESDIR} -maxdepth 1 -type f -name "*.setup")"
+		if [ "x${VPM_PKGFILESNAME}" != "x" ]
+		then
+			PN="${VPM_PKGFILESNAME}"
+		fi
+		
+		for I in ${INS}
+		do
+			local SHORT=${I##*/}
+			if [ "${SHORT}" == "${PN}.setup" ]
+			then
+				REAL_INS="${I}"
+				break
+			fi
+		done
+		
+		INS="${REAL_INS}"	
+	fi
+
+	if [ -n "${INS}" ]
+	then
+		log "$(gettext 'Adding setup scripts')"
+		local I=""
+		for I in ${INS}
+		do
+			if [ -r "${I}" ]
+			then
+				printme -f "log" msg_add_any "${I##*/}"
+				install -D -m 0755 ${I} ${VPM_PKGDIR%/data}/setup
+
+				log "$(gettext 'Replacing tokens on %s file')" "${I##*/}"
+				sed -i \
+				-e 's/^VERSION=.*/VERSION="'${VPM_VERSION}'"/g' \
+				-e 's/^NAME=.*/NAME="'${VPM_NAME}'"/g' \
+				-e 's/^version=.*/version="'${VPM_VERSION}'"/g' \
+				-e 's/^name=.*/name="'${VPM_NAME}'"/g' \
+				-e 's/^pkgver=.*/pkgver="'$(p_pkgversion)'"/g' \
+				-e 's/^pkgname=.*/pkgname="'$(p_pkgname)'"/g' \
+				-e "s#@p_pkgname@#$(p_pkgname)#g" \
+				-e "s#@p_pkgversion@#$(p_pkgversion)#g" \
+				-e "s#@p_name@#$(p_name)#g" \
+				-e "s#@p_version@#$(p_version)#g" \
+				-e "s#@p_lib@#$(p_lib)#g" \
+				-e "s#@p_bin@#$(p_bin)#g" \
+				-e "s#@p_sbin@#$(p_sbin)#g" \
+				-e "s#@p_usrlib@#$(p_usrlib)#g" \
+				-e "s#@p_usrbin@#$(p_usrbin)#g" \
+				-e "s#@p_usrsbin@#$(p_usrsbin)#g" \
+				-e "s#@p_libexec@#$(p_libexec)#g" \
+				-e "s#@p_include@#$(p_include)#g" \
+				-e "s#@p_info@#$(p_info)#g" \
+				-e "s#@p_man@#$(p_man)#g" \
+				-e "s#@p_udev@#$(p_udev)#g" \
+				-e "s#@p_data@#$(p_data)#g" \
+				-e "s#@p_conf@#$(p_conf)#g" \
+				-e "s#@p_menu@#$(p_menu)#g" \
+				-e "s#@p_pixmap@#$(p_pixmap)#g" \
+				-e "s#@p_hicolor@#$(p_hicolor)#g" \
+				-e "s#@p_rc@#$(p_rc)#g" \
+				-e "s#@p_rcconf@#$(p_rcconf)#g" \
+				-e "s#@p_doc@#$(p_doc)#g" \
+				-e "s#@p_usrlib32@#$(p_usrlib32)#g" \
+				-e "s#@p_ramfs@#$(p_ramfs)#g" \
+				-e "s#@p_ktype@#$(p_ktype)#g" \
+				-e "s#@p_kname@#$(p_kname)#g" \
+				-e "s#@p_kver@#$(p_kver)#g" \
+				-e "s#@p_kmodsver@#$(p_kmodsver)#g" \
+				-e "s#@p_ksrc@#$(p_ksrc)#g" \
+				-e "s#@p_kmods@#$(p_kmods)#g" \
+				-e "s#@p_khdr@#$(p_khdr)#g" \
+				-e "s#@p_kfwr@#$(p_kfwr)#g" \
+				-e "s#@p_locale@#$(p_locale)#g" \
+				-e "s#@p_pam@#$(p_pam)#g" \
+				-e "s#@p_limits@#$(p_limits)#g" \
+				-e "s#@p_security@#$(p_security)#g" \
+				-e "s#@p_pkgbin@#$(p_pkgbin)#g" \
+				-e "s#@p_pkgsbin@#$(p_pkgsbin)#g" \
+				-e "s#@p_pkgusrbin@#$(p_pkgusrbin)#g" \
+				-e "s#@p_pkgusrsbin@#$(p_pkgusrsbin)#g" \
+				-e "s#@p_pkglib@#$(p_pkglib)#g" \
+				-e "s#@p_pkgusrlib@#$(p_pkgusrlib)#g" \
+				-e "s#@p_pkginclude@#$(p_pkginclude)#g" \
+				-e "s#@p_pkglibexec@#$(p_pkglibexec)#g" \
+				-e "s#@p_pkgdoc@#$(p_pkgdoc)#g" \
+				-e "s#@p_pkgconf@#$(p_pkgconf)#g" \
+				-e "s#@p_pkgprefix@#$(p_pkgprefix)#g" \
+				${VPM_PKGDIR%/data}/setup					
+			fi
+		done
+	fi
+}
+
+add_crond()
+{
+	local CRON C
+	local PN="${VPM_PKGNAME}"
+
+	if [ "${VPM_MULTIPACK}" == "1" ]
+	then
+		CRON="$(find ${VPM_FILESDIR} -maxdepth 1 -type f -name "${PN}.crond" -o -name "${PN}.hourly" -o -name "${PN}.daily" -o -name "${PN}.weekly" -o -name "${PN}.mounthly")"
+	else	
+		CRON="$(find ${VPM_FILESDIR} -maxdepth 1 -type f -name "*.crond" -o -name "*.hourly" -o -name "*.daily" -o -name "*.weekly" -o -name "*.mounthly")"
+	fi
+	
+	if [ "x${CRON}" != "x" ]
+	then
+		log "$(gettext 'Adding crond and schedule files')"
+		for C in ${CRON}
+		do
+			local SN="${C##*/}"
+			local CN="${SN//.[crond,daily,hourly,weekly,monthly]*}"
+			local CT="${SN//*${CN}.}"
+			[ "${CT}" == "crond" ] && CT="d" 
+			if [ -r ${C} ] 
+			then
+				printme -f "log" msg_add_any "${C##*/}"
+				install -D --mode="0755" ${C} ${VPM_PKGDIR}/etc/cron.${CT}/${CN}
+			fi
+		done
+	fi
+}
+
+
+exec_auto_install()
+{
+	#
+	# Usage
+	#
+	# exec_auto_install <extension>
+	#
+
+	local EXTENSION FUNCTION PN FPUND FILE
+
+	EXTENSION="${1#.}"
+	FUNCTION="new${EXTENSION}"
+	PN="${VPM_PKGNAME}"
+
+	[ -d "${VPM_FILESDIR}" ] || return 0
+	[ -n "$(trim ${EXTENSION})" ] || printme -f "die" msg_mis_args "${FUNCNAME}"
+	commander ${FUNCTION} || die "$(gettext 'Missing or invalid %s() function')" "${FUNCTION}"
+
+	if [ "${VPM_MULTIPACK}" == "1" ]
+	then
+		if [ -n "$(trim ${VPM_PKGFILESNAME})" ]
+		then
+			FOUND="${VPM_FILESDIR}/${VPM_PKGFILESNAME}.${EXTENSION}"
+		else
+			FOUND="${VPM_FILESDIR}/${PN}.${EXTENSION}"
+		fi
+
+		if [ -f "${FOUND}" ]
+		then
+			FOUND="${FOUND}"
+		else
+			FOUND=""
+		fi
+	else	
+		FOUND="$(find ${VPM_FILESDIR} -maxdepth 1 -type f -name "*.${EXTENSION}")"
+	fi
+
+	if [ -n "$(trim ${FOUND})" ]
+	then
+		log "$(gettext 'Adding all .%s files')" "${EXTENSION}"
+		for FILE in ${FOUND}
+		do
+			printme -f "log" msg_add_any "${FILE##*/}"
+			${FUNCTION} "${FILE}"
+		done
+	fi
+
+	return 0
+}
+
+add_icons()
+{
+	local FOUND FOUNDED BASEFILE BASEDIR SIZE SECTION ICON EXT PN T TARGET
+
+	FOUNDED="$(find ${VPM_FILESDIR} -type f -name "*.png" -or -name "*.svg")"
+	PN="${VPM_PKGNAME}"
+
+	for FOUND in ${FOUNDED} 
+	do
+		BASEFILE="${FOUND##*/}"
+		BASEDIR="${FOUND%/*}"
+		set -- ${BASEFILE//_/ }
+		SIZE="${1}"
+		SECTION="${2}"
+		ICON="${3}"
+		EXT="${ICON#*[.png,.svg]}"
+
+		if [ ${VPM_MULTIPACK} == "1" ]
+		then
+			if [ "x${VPM_PKGFILESNAME}" != "x" ]
+			then
+				TARGET="${BASEDIR}/${SIZE}_${SECTION}_${VPM_PKGFILESNAME}${EXT}"
+			else
+				TARGET="${BASEDIR}/${SIZE}_${SECTION}_${PN}${EXT}"
+			fi
+
+			if [ -f "${TARGET}" ]
+			then
+				TARGET="${TARGET}"
+				break
+			else
+				TAGET=""
+			fi
+		fi
+	done
+
+	if [[ -z "${TARGET}" && -n "${FOUNDED}" ]]
+	then
+		TARGET="${FOUNDED}"
+	fi
+
+	if [ "x${TARGET}" != "x" ]
+	then
+		log "$(gettext 'Adding icon and pixmaps files')"
+		for T in ${TARGET}
+		do
+			newicon ${T}
+		done
+	fi
+}
+
+run_auto_rutines()
+{
+	local FILE
+
+	if [ -d "${VPM_FILESDIR}" ]
+	then
+		log "$(gettext 'Running Automatic addition files hooks')"
+
+		add_setup
+		add_crond
+		add_icons
+
+		for FILE in ${VPM_VALID_FILES[@]}
+		do
+			exec_auto_install "${FILE}"
+		done
+	fi
+
+	return 0
+}
+

@@ -1,0 +1,988 @@
+#!/bin/bash
+
+merge_schemas()
+{
+	local INPUT SCHEMAS DOMAIN OUTFILE FI
+
+	INPUT="${1%/data}/data"
+	[[ -n "${INPUT}" || -d "${INPUT}" ]] || return 1
+
+	if [ -d ${INPUT}/etc/gnome/gconf/schemas ]
+	then
+		GNOME_SCHEMAS="$(find ${INPUT}/etc/gnome/gconf/schemas/ | egrep -o ".*\.schemas" | sed -e "s#${INPUT}/##")"
+	fi
+
+	# This is an error but pkg is powerfull ;)
+	if [ -d ${INPUT}/etc/gconf/schemas ]
+	then
+		GENERIC_SCHEMAS="$(find ${INPUT}/etc/gconf/schemas/ | egrep -o ".*\.schemas" | sed -e "s#${INPUT}/##")"
+	fi
+
+	SCHEMAS="${GNOME_SCHEMAS} ${GENERIC_SCHEMAS}"
+
+	if [ -n "$(trim ${SCHEMAS})" ]
+	then
+		log "$(gettext 'Merging gconf schemas on a single file')"
+		DOMAIN="$(find ${INPUT}/usr -type f -name ".*\.mo" 2>/dev/null | head -1 | sed -e "s#.*/##" -e "s#.mo##")"
+		[ -z "${DOMAIN}" ] && DOMAIN="${VPM_PKGNAME}"
+		
+		OUTFILE="${INPUT}/usr/share/gconf/${DOMAIN}.schemas"
+		
+		[ ! -d ${OUTFILE%/*} ] && mkdir -p ${OUTFILE%/*}
+cat > ${OUTFILE} << EOF
+<?xml version="1.0"?>
+<gconfschemafile><schemalist>
+EOF
+
+		for FI in ${SCHEMAS}; do
+			log "$(gettext 'Mergin %s')" "${FI}"
+			
+			LOAD=${INPUT}/${FI}
+			
+			if [ -f "${LOAD}" ]; then
+				sed \
+				-e '/<?xml/d' \
+				-e 's|<gconfschemafile>||g' \
+				-e 's|</gconfschemafile>||g' \
+				-e 's|<schemalist>||g' \
+				-e 's|</schemalist>||g' "${LOAD}" >> "$OUTFILE"
+			fi
+			
+			rm -f ${LOAD}
+		done
+		
+cat >> ${OUTFILE} << EOF
+</schemalist></gconfschemafile>
+EOF
+
+		if [ "$DOMAIN" != "" ]; then
+		  sed -ri "s/^([[:space:]]*)(<locale name=\"C\">)/\1<gettext_domain>$DOMAIN<\/gettext_domain>\n\1\2/; /^[[:space:]]*<locale name=\"[^C]/,/^[[:space:]]*<\/locale>[[:space:]]*\$/ d; /^$/d; s/<\/schema>$/&\n/" "$OUTFILE"
+		fi
+	fi
+	
+	[ -d ${INPUT}/etc/gnome/gconf/schemas ] && rmdir --parents --ignore-fail-on-non-empty ${INPUT}/etc/gnome/gconf/schemas
+	[ -d ${INPUT}/etc/gconf/schemas ] && rmdir --parents --ignore-fail-on-non-empty ${INPUT}/etc/gconf/schemas
+
+	return 0
+}
+
+sanity_perl()
+{
+	local INPUT JUNK G DIR
+
+	INPUT="${1%/data}/data"
+	[[ "X${INPUT}" == "X" || ! -d "${INPUT}" ]] && return 1
+
+	JUNK="$(find ${INPUT} -name "perllocal.pod" -or -name ".packlist" -or -name "*.bs")"
+	if [ -n "${JUNK}" ]
+	then
+		log "$(gettext 'Deleting Perl unused files')"
+		for G in ${JUNK}
+		do
+			printme -f "log" msg_del_any "${G#${INPUT}}"
+			rm -f ${G}
+		done
+	fi	
+
+	if [ -d "${INPUT}/usr/lib/perl5" ]
+	then
+		log "$(gettext 'Deleting Perl empty directories')"
+
+		for DIR in $(find ${INPUT}/usr/lib/perl5 -type d -empty | tac)
+		do
+			printme -f "log" msg_del_any "${DIR#${INPUT}}"
+			rmdir --ignore-fail-on-non-empty ${DIR}
+		done
+
+		rmdir --ignore-fail-on-non-empty ${INPUT}/usr/lib/perl5/5.* 2>/dev/null
+		rmdir --ignore-fail-on-non-empty ${INPUT}/usr/lib/perl5 2>/dev/null
+	fi
+
+	return 0
+}
+
+sanity_fonts()
+{
+	local INPUT
+
+	INPUT="${1%/data}/data"
+	[[ "X${INPUT}" == "X" || ! -d "${INPUT}" ]] && return 1
+	
+	if [ -d ${INPUT}/usr/share/fonts/ ]
+	then
+		find ${INPUT}/usr/share/fonts/ -maxdepth 3 -name "fonts.dir" -o -name "fonts.scale" -delete
+	fi
+
+	return 0
+}
+
+sanity_dirs()
+{
+	local INPUT DIR
+
+	INPUT="${1%/data}/data"
+	[[ "X${INPUT}" == "X" || ! -d "${INPUT}" ]] && return 1
+	
+	if [ -d "${INPUT}/var" ]
+	then
+		log "$(gettext 'Deleting /run related directories')"
+		for DIR in $(find ${INPUT}/var -name "run" -o -name "lock")
+		do
+			printme -f "log" msg_del_any "${DIR#${INPUT}}"
+			rm -rf ${DIR}
+		done
+
+		rmdir --ignore-fail-on-non-empty ${INPUT}/var
+	fi
+
+	return 0
+}
+
+setup_docs()
+{
+	local INPUT DOC_DIR DOC_TARGET T CON FI DIR
+
+
+	INPUT="${1%/data}/data"
+	[[ "X${INPUT}" == "X" || ! -d "${INPUT}" ]] && return 1
+	
+	case "${VPM_PKGPKGTYPE}" in
+		subpkg|metapkg|fakepkg ) return 0;;
+	esac
+
+	DEF_DOCS="
+		README.* readme.* TODO AUTHORS COPYING INSTALL NEWS \
+		ChangeLog changelog COPYRIGHT.* Copyright copyright RELEASENOTES \
+		HACKING CHANGELOG copying Copying GPL gpl MAINTAINERS FAQ.* LICENSE*
+		LICENCE*
+	"
+		
+	local DOC_DIR="${INPUT}/${VPM_PKGDOCDIR}"
+	local DOC_TARGET="${DEF_DOCS}"
+	
+	if [ "x${DOC_TARGET}" != "x" ]
+	then
+		log "$(gettext 'Including oficial documentation files')"
+
+		if [ -d "${VPM_WORKDIR}" ]
+		then
+			mkdir -p "${DOC_DIR}"
+
+			local T=""
+			for T in ${DOC_TARGET}
+			do
+				CON="$(ls -1 ${VPM_WORKDIR}/ | egrep "${T}*")"
+				if [ "x${CON}" != "x" ]
+				then
+					FI=""
+					for FI in ${CON}
+					do
+						if [ ! -f ${DOC_DIR}/${F##*/} ]
+						then
+							if [[ -f ${VPM_WORKDIR}/${FI} && ! -L ${VPM_WORKDIR}/${FI} ]]
+							then
+								printme -f "log" msg_add_any "${FI}"
+								cp -af ${VPM_WORKDIR}/${FI} ${DOC_DIR}
+							fi
+						fi
+					done
+				fi
+			done
+
+			for DIR in ${VPM_PKGNAME}-${VERSION} ${VPM_PKGNAME} ${VERSION}
+			do
+				if [ -d "${INPUT}/usr/doc/${DIR}" ]
+				then
+					cp -af ${INPUT}/usr/doc/${DIR}/* "${DOC_DIR}"
+					rm -rf "${INPUT}/usr/doc/${DIR}"
+				fi
+
+				if [ -d "${INPUT}/usr/docs/${DIR}" ]
+				then
+					cp -af ${INPUT}/usr/docs/${DIR}/* "${DOC_DIR}"
+					rm -rf "${INPUT}/usr/docs/${DIR}"
+				fi
+			done
+
+			[ -d "${INPUT}/usr/share/doc" ] && rmdir --ignore-fail-on-non-empty "${DOC_DIR}"
+			[ -d "${INPUT}/usr/doc" ] && rmdir --ignore-fail-on-non-empty "${INPUT}/usr/doc"
+			[ -d "${INPUT}/usr/docs" ] && rmdir --ignore-fail-on-non-empty "${INPUT}/usr/docs"
+
+			for DIR in "${VPM_PKGNAME}-${VERSION}" "${VERSION}"
+			do
+				if [ -d "${DOC_DIR}/${DIR}" ]
+				then
+					mkdir -p "${DOC_DIR}"
+					cp -af ${DOC_DIR}/${DIR}/* "${DOC_DIR}"
+					rm -rf "${DOC_DIR}/${DIR}"
+				fi
+			done
+		
+			[ -d "${INPUT}/usr/doc" ] && rm -rf "${INPUT}/usr/doc"
+		fi
+	fi
+	
+	rmdir "${DOC_DIR}" 2>/dev/null
+	rmdir "${DOC_DIR%/*}" 2>/dev/null
+	rmdir "${P}/usr/share" 2>/dev/null
+	
+	return 0
+}
+
+setup_manpages()
+{
+	local INPUT MANPAGE_DIR GZ EACH_PAGE EACH_FILE MAN_FILE DES_FILE
+
+	INPUT="${1%/data}/data"
+	[[ "X${INPUT}" == "X" || ! -d "${INPUT}" ]] && return 1
+	
+	case "${VPM_PKGPKGTYPE}" in
+		metapkg|fakepkg ) return 0;;
+	esac
+	
+	if [[ -d "${INPUT}/usr/man" && ! -L "${INPUT}/usr/man" ]]
+	then
+		rmdir --ignore-fail-on-non-empty "${INPUT}/usr/man"
+		( cd "${INPUT}/usr"
+			mkdir -p share/man
+			cp -af man/* share/man
+			rm -rf man
+		)
+	fi
+	
+	[[ -d "${INPUT}/usr/man" && ! -L "${INPUT}/usr/man" ]] && rmdir --parents --ignore-fail-on-non-empty "${INPUT}/usr/man"
+
+	if [ -d "$(trim_slashes "${INPUT}/${VPM_MANDIR}")" ]
+	then
+
+		log "$(gettext 'Setting up mapages')"
+
+		if [ "${VPM_FILTER_EXT}" == ".gz" ]
+		then
+			( cd "${INPUT}/${VPM_MANDIR}"
+				MANPAGE_DIR=""
+				for MANPAGE_DIR in $(find . -type d -name "man*")
+				do
+					( cd "${MANPAGE_DIR}"
+						for EACH_PAGE in $(find . -maxdepth 1 -type l ! -name ".keep")
+						do
+							MAN_FILE="${EACH_PAGE%.gz}"
+							DES_FILE="$(readlink ${EACH_PAGE})"
+							ln -sf "${DES_FILE%.gz}.gz" "${MAN_FILE}.gz"
+							rm -f "${EACH_PAGE}"
+						done
+						
+						for EACH_FILE in $(find . -type f ! -name ".keep")
+						do
+							[ ! -L "${EACH_FILE}" ] && gzip -9 --force "${EACH_FILE}"
+						done
+					)
+				done
+			)
+		else	
+			( cd "${INPUT}/${VPM_MANDIR}"
+				MANPAGE_DIR=""
+				for MANPAGE_DIR in $(find . -type d -name "man*")
+				do
+					( cd "${MANPAGE_DIR}"
+						if [ "${VPM_FILTER_EXT}" != ".gz" ]
+						then
+							for GZ in $(find . -maxdepth 1 -type f -name "*.gz")
+							do
+								[ ! -L "${GZ}" ] && gzip -df "${GZ}"
+							done
+						fi
+						
+						for EACH_PAGE in $(find . -maxdepth 1 -type l ! -name ".keep")
+						do
+							MAN_FILE="${EACH_PAGE%.gz}"
+							DES_FILE="$(readlink ${EACH_PAGE})"
+							ln -sf "${DES_FILE%.gz}${VPM_FILTER_EXT}" "${MAN_FILE}${VPM_FILTER_EXT}"
+							rm -f "${EACH_PAGE}"
+						done
+				
+						for EACH_FILE in $(find . -mindepth 1 -type f \( ! -iname "*.gz" ! -iname ".*" \) )
+						do
+							[ ! -L "${EACH_FILE}" ] && ${VPM_FILTER_CMD} --force "${EACH_FILE}"
+						done
+					)
+				done
+			)
+		fi
+	fi
+
+	return 0
+}
+
+setup_infopages()
+{
+	local INPUT GZ EACH_INFO EACH_FILE INFO_FILE DEST_FILE
+
+	INPUT="${1%/data}/data"
+	[[ "X${INPUT}" == "X" || ! -d "${INPUT}" ]] && return 1
+	
+	case "${VPM_PKGPKGTYPE}" in
+		subpkg|metapkg|fakepkg ) return 0;;
+	esac
+	
+	if [[ -d "${INPUT}/usr/info" && ! -L "${INPUT}/usr/info" ]]
+	then
+		( cd "${INPUT}/usr"
+			mkdir -p share/info
+			cp -af info/* share/info
+			rm -f info
+		)
+	fi
+
+	[[ -d "${INPUT}/${VPM_INFODIR}" && ! -L "${INPUT}/${VPM_INFODIR}" ]] && rmdir --parents --ignore-fail-on-non-empty "${INPUT}/${VPM_INFODIR}"
+	[[ -d "${INPUT}/usr/info" && ! -L "${INPUT}/usr/info" ]] && rmdir --parents --ignore-fail-on-non-empty "${INPUT}/usr/info"
+	
+	if [ -d "$(trim_slashes "${INPUT}/${VPM_INFODIR}")" ]
+	then
+
+		log "$(gettext 'Setting up info pages')"
+
+		( cd "${INPUT}/${VPM_INFODIR}"
+			rm -f dir
+			if [ "${VPM_FILTER_EXT}" != ".gz" ]
+			then
+				for GZ in $(find . -maxdepth 1 -type f -name "*.gz")
+				do
+					[ ! -L "${GZ}" ] && gzip -df "${GZ}"
+				done
+			fi
+			
+			for EACH_INFO in $( find . -maxdepth 1 -type l ! -name ".keep")
+			do
+				INFO_FILE="${EACH_INFO%.gz}"
+				DEST_FILE="$(readlink ${EACH_INFO})"
+				ln -sf "${DEST_FILE%.gz}${VPM_FILTER_EXT}" "${INFO_FILE}${VPM_FILTER_EXT}"
+				rm -f "${EACH_INFO}"
+			done
+		
+			for EACH_FILE in $(find . -mindepth 1 -type f \( ! -iname "*.gz" ! -iname ".*" \) )
+			do
+				${VPM_FILTER_CMD} --force "${EACH_FILE}" 2>/dev/null
+			done
+		)
+	fi
+
+	return 0
+}
+
+setup_pkgconfig()
+{
+	local INPUT="${1%/data}/data"
+	[[ "X${INPUT}" == "X" || ! -d "${INPUT}" ]] && return 1
+	
+	if [ -d "${INPUT}/usr/share/pkgconfig" ]
+	then
+		log "$(gettext 'Fixing pkgconfig files location')"
+
+		mkdir -p "${INPUT}/${VPM_USR_LIBDIR}/pkgconfig"
+		mv -f ${INPUT}/usr/share/pkgconfig/* "${INPUT}/${VPM_USR_LIBDIR}/pkgconfig"
+		rmdir --ignore-fail-on-non-empty "${INPUT}/usr/share/pkgconfig"
+	fi
+
+	return 0
+}
+
+sanity_empty_dirs()
+{
+	local INPUT DIR
+
+	INPUT="${1%/data}/data"
+	[[ "X${INPUT}" == "X" || ! -d "${INPUT}" ]] && return 1
+	
+	if [ "${VPM_PKGRMEMPTY}" == "1" ]
+	then
+
+		log "$(gettext 'Deleting empty directories')"
+
+		for DIR in $(find ${INPUT} -type d -empty)
+		do
+			printme -f "log" msg_del_any "${DIR##${INPUT}}"
+			rmdir --ignore-fail-on-non-empty "${DIR}"
+		done
+	fi
+}
+
+sanity_libtool()
+{
+	local INPUT LT
+
+	INPUT="${1%/data}/data"
+	[[ "X${INPUT}" == "X" || ! -d "${INPUT}" ]] && return 1
+	
+	if [ "${VPM_PKGRMLIBTOOL}" == "1" ]
+	then
+		log "$(gettext 'Deleting libtool unused files')"
+
+		for LT in $(find ${INPUT} ! -type d -name "*.la")
+		do
+			printme -f "log" msg_del_any "${LT#${INPUT}}"
+			rm -f "${LT}"
+		done
+	fi
+
+	return 0
+}
+
+find_special_perms()
+{
+	local NA US GR PR I FILES DIRS NONROOT INPUT
+	
+	INPUT="${1%/data}/data"
+	[[ "X${INPUT}" == "X" || ! -d "${INPUT}" ]] && return 1
+		
+	log "$(gettext 'Finding special permission files')"
+	
+	declare -A SP
+
+	FILES="$(find ${INPUT} -mindepth 1 -type f -print0 | xargs -r0 stat -c "%n|%U|%G|%a")"
+	DIRS="$(find ${INPUT} -mindepth 1 -type d -print0 | xargs -r0 stat -c "%n|%U|%G|%a")"
+	NONROOT="$(find ${INPUT} -mindepth 1 -not -uid 0 -or -not -gid 0 -print0 | xargs -r0 stat -c "%n|%U|%G|%a")"
+
+	for I in ${FILES}
+	do
+		I="${I//|/ }"
+		set -- ${I}
+		
+		NA="${1##${INPUT}}"
+		US="${2}"
+		GR="${3}"
+		PR="${4}"
+		
+		case ${NA} in
+			/usr/share/doc/*|/usr/share/man/* ) continue ;;
+		esac
+
+		case ${PR} in
+			644|755|777 ) continue ;;
+			*           )
+				[[ -n "${FAKEROOTKEY}" && "${US}" == "${AND_USER}" ]] && continue
+				SP["${NA}"]+="setattr:${NA}:${US}:${GR}:${PR}" ;;
+		esac
+	done
+
+
+	for I in ${DIRS}
+	do
+		I="${I//|/ }"
+		set -- ${I}
+
+		NA="$(trim ${1##${INPUT}})"
+		US="${2}"
+		GR="${3}"
+		PR="${4}"
+		
+		case ${PR} in
+			755 ) continue ;;
+			*           )
+				[[ -n "${FAKEROOTKEY}" && "${US}" == "${AND_USER}" ]] && continue
+				if is_part_of "${NA}" "${!SP[@]}"
+				then
+					SP["${NA}"]+="setattr:${NA}:${US}:${GR}:${PR}"
+				fi
+			;;
+		esac
+	done
+
+	for I in ${NONROOT}
+	do
+		I="${I//|/ }"
+		set -- ${I}
+
+		NA="${1##${INPUT}}"
+		US="${2}"
+		GR="${3}"
+		PR="${4}"
+
+		[[ "${US}" == "UNKNOW" || "${GR}" == "UNKNOW" ]] && continue
+		[[ -n "${FAKEROOTKEY}" && "${US}" == "${AND_USER}" ]] && continue
+
+		if is_part_of ${NA} ${!SP[@]} 
+		then
+			SP["${NA}"]+="setattr:${NA}:${US}:${GR}:${PR}"
+		fi
+	done
+
+	if (( ${#SP[@]} > 0 ))
+	then
+		if [ -z "${FAKEROOTKEY}" ]
+		then
+			log "$(gettext 'The nex special permissions files found, append it to setup file')"
+			cat << EOF
+$(for I in ${SP[@]}
+do
+	echo "	${I//:/ }"
+done)
+EOF
+		fi
+	fi
+	
+	return 0
+}
+
+auto_find_special_perms()
+{
+	local INPUT I SPECIAL PERM LINE FILE
+
+	INPUT="${1%/data}/data"
+	FILE="${INPUT%/data}/setup"
+
+	[[ "X${INPUT}" == "X" || ! -d "${INPUT}" ]] && return 1
+		
+	SPECIAL="$(find ${INPUT} ! -user root -o ! -group root)"	
+	if [ -n "${SPECIAL}" ]
+	then
+		log "$(gettext 'Files with special permissions found')"
+
+		if [ -f "$(trim ${FILE})" ]
+		then		
+			sed -i -e '/^set_perms()/,/^{/d' ${FILE}
+			sed -i -e '\/etc\/vpm\/vpm.conf/d' ${FILE}
+			sed -i -e '/${VPM_RUNTIME_FILE}d' ${FILE}
+			
+			sed -i -e '/^case ${1} in/i \\n. \/etc\/vpm\/vpm.conf\n. ${VPM_RUNTIME_FILE}\n' ${FILE}
+			
+			if [ -z "$(grep -E '^.*setperm\).*set_perms.*;;' ${FILE})" ]
+			then
+				sed -i -e '/^case ${1} in/a \\tsetperm) set_perms    ;;' ${FILE}
+			fi
+		else
+cat >  ${FILE} << "EOF"
+#!/bin/sh
+#
+# Plublishes under GLP V2.1 or grant, all right reserved
+#
+# Configuration script for vpm package.This script will be
+# executed under install|remove|upgrade and config process
+# with root privileges. Please be carefull
+##
+
+. /etc/vpm/vpm.conf
+. ${VPM_RUNTIME_FILE}
+
+case ${1} in
+        setperm) set_perms    ;;
+        prein  ) pre_install  ;;
+        postin ) post_install ;;
+        prerm  ) pre_remove   ;;
+        postrm ) post_remove  ;;
+        preup  ) pre_upgrade  ;;
+        postup ) post_upgrade ;;
+        config ) exec_config  ;;
+esac
+EOF
+		fi
+
+		sed -i -e '/${VPM_RUNTIME_FILE}/i set_perms()'  ${FILE}
+		
+		for I in ${SPECIAL}
+		do
+			case ${I} in
+				*/share/doc/* ) continue ;;
+				* )
+					PERM="$(stat -c '%U %G %a' ${I})"
+					LINE="${I##${INPUT}} ${PERM}"
+					LINE="${LINE//\//\\/}"
+					sed -i -e '/set_perms()/a \\tsetattr '"${LINE}"'' ${FILE}
+				;;
+			esac
+		done
+		
+		sed -i -e '/set_perms()/a {' ${FILE}
+		sed -i -e '/${VPM_RUNTIME_FILE}/i }\n'  ${FILE}
+	fi
+
+	return 0
+}
+
+strip_binaries()
+{
+	local STRIP_STATIC STRIP_SHARED STRIP_BINARIES LINE STRIPPATH CONTAINER
+
+	INPUT="${1%/data}/data"
+	[[ "X${INPUT}" == "X" || ! -d "${INPUT}" ]] && return 1
+	
+	STRIP_STATIC="--strip-debug"
+	STRIP_SHARED="--strip-unneeded"
+	STRIP_BINARIES="--strip-unneeded"
+	
+	log "$(gettext 'Stripping binaries and libraries')"
+
+	find ${INPUT}/{opt,bin,usr/bin,sbin,usr/sbin,lib,usr/lib,usr/local/bin,usr/local/sbin,usr/local/lib} -type f 2>/dev/null | uniq | \
+	while read LINE
+	do
+		STRIPPATH="${LINE##${INPUT}}"
+		CONTAINER="${STRIPPATH%/*}"
+		
+		case $(file -bi ${LINE}) in
+			*application/x-sharedlib*)
+				printme -f "log" msg_stripping "${LINE##${INPUT}}"
+				strip ${STRIP_SHARED} ${LINE}
+				case ${CONTAINER} in
+					/lib | /usr/lib | /usr/local/lib ) chmod 0755 "${LINE}" ;;
+				esac
+			;;
+			*application/x-archive*)
+				printme -f "log" msg_stripping "${LINE##${INPUT}}"
+				strip ${STRIP_STATIC} ${LINE}
+				case ${CONTAINER} in
+					/lib | /usr/lib | /usr/local/lib ) chmod 0644 "${LINE}" ;;
+				esac
+			;;
+			*application/x-executable*)
+				printme -f "log" msg_stripping "${LINE##${INPUT}}"
+				strip ${STRIP_BINARIES} "${LINE}"
+			;;
+		esac
+	done
+
+	return 0
+}
+
+get_head_option()
+{	
+	egrep "^#.*${1}.*:" ${VPM_SPECFILE} | cut -d ":" -f 2
+	return $?
+}
+
+print_package_file()
+{
+	local INPUT FILE TAB D_FILE D_NAME D_VERS D_REL D_SECC PACKAGER 
+	local LICENSE TYPE SRCDIR LINE DC LS CD
+
+	log "$(gettext 'Printing a package database')"
+
+	INPUT="${1%/data}/data"
+	FILE="${INPUT%/data}/package"
+	
+	[[ -z "${INPUT}" || ! -d "${INPUT}" ]] && return 1
+
+cat > ${FILE} << EOF
+NAME       : ${VPM_PKGNAME}
+VERSION    : ${VPM_PKGVERSION}
+PKGARCH    : ${VPM_PKGPKGARCH}
+SECTIONS   : ${VPM_PKGSECTIONS}
+PKGTYPE    : ${VPM_PKGPKGTYPE}
+HOLDON     : ${VPM_PKGHOLDON}
+BUILDIR    : ${VPM_NAME}
+EOF
+
+	PACKAGER="$(get_head_option packager)"
+	PACKAGER="${PACKAGER:-Orphan package}"
+	set -- ${PACKAGER}
+cat >> ${FILE} << EOF
+PACKAGER   : ${@}
+EOF
+
+	LICENSE="$(get_head_option license)"
+	LICENSE="${LICENSE:-Unknow}"
+	set -- ${LICENSE}
+cat >> ${FILE} << EOF
+LICENSE    : ${@}
+EOF
+
+	grep "^#.*${VPM_PKGNAME}_.*:" ${VPM_SPECFILE} | tr -d '#' | \
+	while read LINE
+	do
+			DC="${LINE##*:}"
+			LC="${LINE%%:*}"
+			CD="${LC##*_}"
+			if [ "x${DC}" == "x" ]
+			then
+				DC="No available description"
+			fi
+
+			set -- ${DC}
+cat >> ${FILE} << EOF
+SUMMARY_$( only_upper ${CD} ) : ${@}
+EOF
+			DC=""
+			LC=""
+			CD=""
+	done
+	
+	return 0
+}
+
+insertable()
+{
+	local DB PROG FUNC
+	
+	PROG="${1}"
+	
+	if ! is_part_of ${PROG} ${BLACK_LIST[@]}
+	then
+		warn "$(gettext '%s package is blacklisted')" "${PROG}" 
+		return 1
+	fi
+	is_part_of ${PROG} ${RUN_DEPS[@]}   || return 1
+	is_part_of ${PROG} ${PKG_DETECT[@]} || return 1
+	is_part_of ${PROG} ${BLACK_LIST[@]} || return 1
+
+	return 0
+}
+
+compute_sh_libs()
+{
+	local I L INPUT FORB_LDLIBS
+	INPUT="$(trim_trailing ${1})"
+
+	unset FORB_LDLIBS LINKER_LIBS
+
+	for I in $(find ${INPUT}/{lib,usr/{,local/}lib} ! -type d 2>/dev/null | sed -e "s#${INPUT}##g")
+	do
+		FORB_LDLIBS+=( $(trim_slashes ${I}) )
+	done
+	FORB_LDLIBS=( $(only_uniq ${FORB_LDLIBS[@]}) )
+
+	for I in \
+	$(find ${INPUT}/{bin,sbin,lib,usr/{bin,sbin,lib},usr/local/{bin,sbin,lib},usr/libexec,opt,usr/share/vpm/bin} -type f 2>/dev/null | xargs file 2>/dev/null | egrep "(shared object|executable)" | grep ELF | cut -f 1 -d :)
+	do
+		for L in $(ldd -r ${I} 2>/dev/null | awk '{print $3}')
+		do
+			case ${L} in
+				*0x*|*libfakeroot*|not|dynamic|./|${INPUT}*|${VPM_WORKDIR}*) continue ;;
+				* )
+					is_part_of ${L} ${FORB_LDLIBS[@]} || continue
+					LINKER_LIBS+=(${L})
+				;;
+			esac
+		done
+	done
+	
+	LINKER_LIBS=( $(only_uniq ${LINKER_LIBS[@]}) )
+
+	return 0
+}
+
+find_prog()
+{
+	local LIB FILES STRIP PROG
+
+	LIB="$(trim_grep_chars ${1})"
+
+	FILES=( $(grep -ERls -- "^${LIB}$" ${VPM_PKG_FILES}/*) )
+	[ -z "${FILES}" ] && FILES=( $(grep -ERls -- "*./${LIB##*/}$" ${VPM_PKG_FILES}/*) )
+
+	STRIP=( ${FILES[@]##*/} )
+	PROG=( $(only_uniq ${STRIP[@]}) )
+	PROG="$(archive_info --name "${PROG[0]}")"
+
+	echo ${PROG}
+
+	return 0
+}
+
+compute_depends()
+{
+	local INPUT FILE MYLIB I FOUND BLACK_LIST RUN_DEPS PKG_DETECT
+	local RUN_DEPS OPT_DEPS BUILD_DEPS CON_FLICTS FULL_DEPS
+
+	INPUT="${1%/data}/data"
+	FILE="${INPUT%/data}/package"
+	[[ -z "${INPUT}" || ! -d "${INPUT}" || ! -f "${FILE}" ]] && return 1
+
+	log "$(gettext 'Running depends detection')"
+
+	BLACK_LIST=( $(only_uniq ${VPM_PKGBLACKLIST} ${VPM_PKGNAME} ${VPM_PKGOPTDEPS}) )
+	RUN_DEPS=( $(trim_no_allowed ${VPM_PKGRUNDEPS}) )
+
+	if [[ "${VPM_PKGAUTODEPS}" == "1" && "${VPM_PKGPKGARCH}" != "noarch" ]]
+	then		
+		log "$(gettext 'Finding shared libraries depends')"
+		compute_sh_libs ${VPM_PKGDIR}
+		(( ${#LINKER_LIBS[@]} == 0 )) && log "$(gettext 'No shared libraries found')"
+
+		log "$(gettext 'Finding packages for libraries depends')"
+		for MYLIB in ${LINKER_LIBS[@]}
+		do
+			PROG=""
+			FOUND="0"
+			case ${MYLIB##*/} in
+				ld-linux-*|libc.so*|libdl.so*|libm.so*|libpthread.so*|libcrypt.so*|librt.so*|libresolv.so*) 
+					PROG="${VPM_LIBC6}" 
+				;;
+				* ) 
+					log "$(gettext 'Searching %s on installed packages')" "${MYLIB}"
+					PROG=$(find_prog ${MYLIB})
+				;;
+			esac
+			
+			if insertable ${PROG}
+			then
+				if ! find_exactly ${PROG}
+				then
+					PKG_DETECT+=(${PROG})
+					FOUND="1"
+				fi
+			else
+				FOUND="1"
+			fi
+
+			if [ "${FOUND}" == "1" ]
+			then
+				log "$(gettext '%s found inside %s package')" "${MYLIB##*/}" "${PROG}"
+			else
+				warn "$(gettext '%s NOT found inside any installed package')" "${MYLIB##*/}"
+			fi
+		done
+	else
+		log "$(gettext 'Skipping autodeps detection process')"
+	fi
+
+	case ${VPM_INHERIT} in
+		perl   ) PKG_DETECT+=(perl)   ;;
+		python ) PKG_DETECT+=(python) ;;
+	esac
+
+	#
+	# First process RUNDEPS 
+	#
+	RUN_DEPS+=(${PKG_DETECT[@]})
+	RUN_DEPS=( $(only_uniq ${RUN_DEPS[@]}) )
+
+	if [ "${#RUN_DEPS[@]}" -gt "0" ]
+	then
+		cat >> ${FILE} << OTF
+RUNDEPS    : ${RUN_DEPS[@]}
+OTF
+	fi
+
+
+	#
+	# Then process OPTDEPS
+	#
+	OPT_DEPS=( $(only_uniq ${VPM_PKGOPTDEPS}) )
+	if [ "${#OPT_DEPS[@]}" -gt "0" ]
+	then
+			cat >> ${FILE} << OTF
+OPTDEPS    : ${OPT_DEPS[@]}
+OTF
+		fi
+
+
+	#
+	# Process BUILDEPS
+	#
+	BUILD_DEPS=( $(only_uniq ${VPM_PKGBUILDEPS}) )
+	for I in ${BUILD_DEPS[@]}
+	do
+		if is_part_of ${I} ${BLACK_LIST[@]}
+		then
+			FULL_DEPS+=(${I})
+		fi
+	done
+	if [ "${#FULL_DEPS[@]}" -gt "0" ]
+	then
+			cat >> ${FILE} << OTF
+BUILDEPS   : ${FULL_DEPS[@]}
+OTF
+		fi
+
+
+	#
+	# Process CONFLICTS
+	#
+	CON_FLICTS=( $(only_uniq ${VPM_PKGCONFLICTS}) )
+	if [ "${#CON_FLICTS[@]}" -gt "0" ]
+	then
+			cat >> ${FILE} << OTF
+CONFLICTS  : ${CON_FLICTS[@]}
+OTF
+		fi
+
+
+	#
+	# And SHLIBS
+	#
+	FULL_DEPS=(${LINKER_LIBS[@]##*/})
+	if [ "${#FULL_DEPS[@]}" -gt "0" ]
+	then
+		cat >> ${FILE} << OTF
+SHLIBDEPS  : ${FULL_DEPS[@]}
+OTF
+	fi
+
+	unset FORB_LDLIBS LINKER_LIBS
+	
+	return 0
+}
+
+put_changelog()
+{
+	local INPUT
+	
+	INPUT="${1%/data}"
+	if [ -f ${VPM_BUILDIR}/changelog ]
+	then
+		cat ${VPM_BUILDIR}/changelog > ${INPUT}/changelog
+	fi
+	
+	return 0
+}
+
+run_pkg_rutines()
+{
+	local PROC
+
+	for PROC in ${VPM_VALID_PROCESS[@]}
+	do
+		case ${PROC} in
+			strip_binaries )
+				if [ "${VPM_PKGPKGARCH}" == "noarch" ]
+				then
+					log "$(gettext '"%s" architecture detected')" "${VPM_PKGPKGARCH}"
+					continue
+				else
+					if [ "${VPM_PKGSTRIP}" == "0" ]
+					then
+						log "$(gettext 'Skipping strip process')"
+						continue
+					fi
+				fi
+			;;
+#			compute_depends )
+#				if [ "${VPM_PKGAUTODEPS}" == "0" ]
+#				then
+#					log "$(gettext 'Skipping autodeps detection process')"
+#					continue
+#				fi
+#			;;
+			sanity_empty_dirs )
+				if [ "${VPM_PKGRMEMPTY}" == "0" ]
+				then
+					log "$(gettext 'Skipping delete empty dirs process')"
+					continue
+				fi
+			;;
+			sanity_libtool )
+				if [ "${VPM_PKGRMLIBTOOL}" == "0" ]
+				then
+					log "$(gettext 'Skipping delete libtool files process')"
+					continue
+				fi
+			;;
+			find_special_perms )
+				if [ "${VPM_PKGSETPERMS}" == "0" ]
+				then
+					log "$(gettext 'Skipping special permission files')"
+					continue
+				else
+					if [ -n "${FAKEROOTKEY}" ]
+					then
+						log "$(gettext 'Find special permission files fail under fakeroot environment')"
+						continue
+					fi
+				fi
+			;;
+		esac
+
+		${PROC} "${VPM_PKGDIR%/data}" || printme -f "die" msg_fail_func "${PROC}"
+	done
+
+	return 0
+}

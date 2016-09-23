@@ -1,0 +1,387 @@
+#!/bin/bash
+
+reset_spec_func()
+{
+	local FUNC=""
+
+	for FUNC in ${VPM_SPEC_FUNCTIONS[@]}
+	do
+		if commander ${FUNC}
+		then
+			unset ${FUNC}
+		fi
+	done
+
+	return 0
+}
+
+reset_setup_func()
+{
+	local FUNC=""
+
+	for FUNC in ${VPM_SETUP_FUNCTIONS[@]}
+	do
+		if commander ${FUNC}
+		then
+			unset ${FUNC}
+		fi
+	done
+
+	return 0
+}
+
+install_created_packages()
+{
+	local VPM
+
+	if [ "${AND_INSTALL}" == "1" ]
+	then
+		if [[ "$(id -un)" == "root" && -z "${FAKEROOTKEY}" ]]
+		then
+			for VPM in $(find ${VPM_BUILDIR} -maxdepth 1 -type f -name "*.vpm" | grep -E -- ".*-(noarch|${VPM_PKGARCH}).*")
+			do
+				log "$(gettext 'Installing %s package')" "${VPM##${VPM_BUILDIR}/}"
+				vpm --install --silent --force ${VPM} || die "$(gettext 'Failed to install %s')" "${VPM##${VPM_BUILDIR}/}"
+			done
+		fi
+	fi
+}
+
+build_package()
+{
+	local MODE MYCODE
+
+	MODE="test"
+	case ${1} in
+		-t|--test|test  ) MODE="test"  ; shift ;;
+		-b|--build|build) MODE="build" ; shift ;;
+	esac
+	
+	# Check distribution support
+	distro_support
+
+	# Read core default build options
+	build_vars
+		
+	# Unset all spec valid functions
+	reset_spec_func
+	
+	# Unset all setup file valid functions
+	reset_setup_func
+
+	# Parse default variables taken from make.conf and spec file
+	parse_def_variables
+
+	# Print all internal and usable paths this, will be modificable via
+	# read_spec_paths() in the future
+	print_paths
+
+	# Test libc6 support but only if this is not self package.
+	case ${VPM_NAME} in
+		glibc|eglibc) true         ;;
+		*           ) libc_support ;;
+	esac
+		
+	# set private variables for use internally. This variables will be 
+	# modificable via set-* , unset-* and add-* functions placed inside
+	# "modifiers" libary but only unde pkg_setup() function.
+	private_global_variables
+
+	# Set private global variables for use internally. This variables will be 
+	# modificable via set-* , unset-* and add-* functions placed inside
+	# "modifiers"
+	private_package_variables
+
+	readonly F="${VPM_FILESDIR}"
+	readonly B="${VPM_BUILDIR}"
+	
+	# Now, if pkg_setup() is present, then will be run this functions for
+	# run internal set-* , unset-* or add-* commands and take new usable
+	# varibales for the next process.
+	if commander pkg_setup
+	then
+		VPM_CUR_FUNCTION="pkg_setup"
+		printme -f "log" msg_run_func ${VPM_CUR_FUNCTION}
+		${VPM_CUR_FUNCTION}
+	fi
+
+	#
+	# Before continue, check settings for parent package
+	#
+	VPM_PKGNAME="${VPM_NAME}"
+	if [ "${MODE}" != "build" ]
+	then
+		printme -f "log" msg_validating_main "${VPM_PKGNAME}"
+	fi
+	search_and_run_non_global pkg_compile
+	check_function_settings
+	MYCODE="${?}"
+	[ "${MYCODE}" != "0" ] && return ${MYCODE}
+
+	if [ -n "${VPM_PKGSUBPKGS}" ]
+	then
+		if ! validate_functions ${VPM_PKGSUBPKGS}
+		then
+			die "$(gettext 'The nex package functions are missing :\n%s')" "${FAIL_FUNCTIONS}"
+		else
+			if [ -z "${VALID_FUNCTIONS}" ]
+			then
+				sys "$(gettext 'Turnning off multipack flag. No valid subpackage found')"
+				VPM_MULTIPACK="0"
+			else
+				VPM_PKGSUBPKGS="${VALID_FUNCTIONS}"
+				VPM_MULTIPACK="1"
+			fi
+		fi
+	fi
+
+	if [ "${MODE}" == "test" ]
+	then
+		printme -f "log" msg_close_main "${VPM_PKGNAME}"
+	fi
+
+	if [ "${MODE}" == "build" ]
+	then					
+		# If everithing is ok, then need update sources especified on SOURCES
+		# variable or modifcable by add-sources()
+		check_sources
+		if [ "${AND_UPDATE}" == "1" ]
+		then
+			update_buildir
+		else
+			log "$(gettext 'Update srcdir is disabled')"
+		fi
+
+		readonly S=(${VPM_PKGSOURCES})
+
+		if commander pkg_pre_clean
+		then
+			VPM_CUR_FUNCTION="pkg_pre_clean"
+			printme -f "log" msg_run_func ${VPM_CUR_FUNCTION}
+			${VPM_CUR_FUNCTION}
+		fi
+		spec_buildir_clean --loger "log" --full || die "$(gettext 'Failed to clean "%s" srcdir')" "${VPM_PKGNAME}" 
+
+		if commander pkg_pre_unpack
+		then
+			VPM_CUR_FUNCTION="pkg_pre_unpack"
+			printme -f "log" msg_run_func "${VPM_CUR_FUNCTION}"
+			${VPM_CUR_FUNCTION}
+		fi
+		
+		if [ "${VPM_PKGUNPACK}" == "1" ]
+		then
+			printme -f "log" msg_unpacking "$(archive_info --file ${VPM_SRCFILE})"
+			extract_src              || printme -f "die" msg_fail_extract "$(archive_info --file ${VPM_SRCFILE})"
+			[ -d "${VPM_WORKDIR}" ]  || printme -f "die" msg_mis_dir "${VPM_WORKDIR}"
+		else
+			log "$(gettext '%s package types does not need unpack sources')" "${VPM_PKGTYPE}"
+		fi
+		readonly W="${VPM_WORKDIR}"
+
+		if commander pkg_pre_patch
+		then
+			VPM_CUR_FUNCTION="pkg_pre_patch"
+			printme -f "log" msg_run_func "${VPM_CUR_FUNCTION}"
+			${VPM_CUR_FUNCTION}
+		fi
+
+		if [[ "${VPM_PKGPATCH}" == "1" && "${VPM_PKGUNPACK}" == "1" ]]
+		then
+			apply_patches || exit 1
+		else
+			log "$(gettext 'Patching "%s" sources is disabled by demand')" "${VPM_PKGNAME}"
+		fi
+
+		if commander pkg_pre_compile
+		then
+			VPM_CUR_FUNCTION="pkg_pre_compile"
+			printme -f "log" msg_run_func "${VPM_CUR_FUNCTION}"
+			${VPM_CUR_FUNCTION}
+		fi
+		
+		if commander pkg_compile
+		then
+			VPM_CUR_FUNCTION="pkg_compile"
+			VPM_PKGNAME="${VPM_NAME}"
+			VPM_PKGDIR="$(trim_slashes "${VPM_BUILDIR}/${VPM_PKGNAME}-root/data")"
+			printme -f "log" msg_run_func "${VPM_CUR_FUNCTION}"		
+			private_package_variables
+			read_spec_paths
+			P="${VPM_PKGDIR}"
+			D="${VPM_PKGDESTDIR}"
+			[[ "${VPM_MULTIPACK}" == "0" && ! -d "${P}" ]] && mkdir -p "${P}"
+			${VPM_CUR_FUNCTION}
+		fi
+	fi
+		
+	if [ "${VPM_MULTIPACK}" == "0" ]
+	then
+		if [ "${MODE}" == "build" ]
+		then
+			printme -f "log" msg_building "${VPM_PKGNAME}"
+
+			if commander pkg_${VPM_PKGNAME}
+			then
+				if [ "${SUB_FUNC}" == "1" ]
+				then
+					VPM_CUR_FUNCTION="pkg_${VPM_PKGNAME}"
+					VPM_PKGNAME="${VPM_PKGNAME}"
+					VPM_PKGDIR="$(trim_slashes "${VPM_BUILDIR}/${VPM_PKGNAME}-root/data")"
+					printme -f "log" msg_run_func "${VPM_CUR_FUNCTION}"
+					private_package_variables					
+					search_and_run_non_global ${VPM_CUR_FUNCTION}
+					check_function_settings
+					MYCODE="${?}"
+					[ "${MYCODE}" != "0" ] && return ${MYCODE}
+					read_spec_paths
+					P="${VPM_PKGDIR}"
+					D="${VPM_PKGDESTDIR}"
+					[ ! -d "${P}" ] && mkdir -p "${P}"
+					${VPM_CUR_FUNCTION}
+				fi
+			else
+					VPM_PKGNAME="${VPM_PKGNAME}"
+					VPM_PKGDIR="$(trim_slashes "${VPM_BUILDIR}/${VPM_PKGNAME}-root/data")"
+					P="${VPM_PKGDIR}"
+					D="${VPM_PKGDESTDIR}"
+					[ ! -d "${P}" ] && mkdir -p "${P}"
+			fi
+
+			run_auto_rutines ${P}
+			run_pkg_rutines ${P}
+
+			if commander pkg_post_compile
+			then
+				printme -f "log" msg_run_func "pkg_post_compile"
+				pkg_post_compile
+			fi
+			if commander pkg_pre_package
+			then
+				printme -f "log" msg_run_func "pkg_pre_package"
+				pkg_pre_package
+			fi
+
+			if commander pkg_${VPM_PKGNAME}_pre_package
+			then
+				if ! commander pkg_pre_package
+				then
+					printme -f "log" msg_run_func "pkg_${VPM_PKGNAME}_pre_package"
+					pkg_${VPM_PKGNAME}_pre_package
+				fi
+			fi
+
+			if [ "${AND_MKPKG}" == "1" ]
+			then
+				log "$(gettext 'Creating vpm package')"
+				[ "${AND_LDCONFIG}" == "0" ] && MYPARAMS="--noldconfig"  
+				case "${VPM_PKGPKGTYPE}" in
+					metapkg|fakepkg|binpkg ) MYPARAMS="${MYPARAMS:---noldconfig}" ;;
+				esac
+				
+				vpm --makepkg --silent ${MYPARAMS} ${P%%/data} || exit 1
+				install_created_packages
+			fi
+		fi
+	elif [ "${VPM_MULTIPACK}" == "1" ]
+	then
+		for PKG in ${VPM_PKGSUBPKGS}
+		do
+			VPM_CUR_FUNCTION="pkg_${PKG}"
+			VPM_PKGNAME="${PKG}"
+			case "${MODE}" in
+				test ) printme -f "log" msg_validating ${VPM_PKGNAME} ;;
+			esac
+			private_package_variables
+			search_and_run_non_global pkg_${PKG}
+			check_function_settings
+			MYCODE="${?}"
+			[ "${MYCODE}" != "0" ] && return ${MYCODE}
+
+			case "${MODE}" in
+				test ) printme -f "log" msg_close_valid "${VPM_PKGNAME}" ;;
+			esac
+
+			if [ "${MODE}" == "build" ]
+			then
+				printme -f "log" msg_building "${VPM_PKGNAME}"
+				VPM_PKGPKGTYPE="subpkg"
+				VPM_PKGDESTDIR="$(trim_slashes "${VPM_BUILDIR}/${VPM_PKGNAME##${VPM_BUILDIR}}-root/data")"
+				VPM_PKGINSTCMD="${VPM_PKGMAKECMD} ${VPM_PKGDESTCMD}=${VPM_PKGDESTDIR} ${VPM_PKGDESTGT}"
+
+				read_spec_paths
+
+				P="${VPM_PKGDIR}"
+				D="${VPM_PKGDESTDIR}"
+				N="${VPM_PKGNAME}"
+
+				[ ! -d "${P}" ] && mkdir -p "${P}"
+				${VPM_CUR_FUNCTION}
+
+				run_auto_rutines ${P}
+				run_pkg_rutines ${P}
+
+				if commander pkg_${VPM_PKGNAME}_post_compile
+				then
+					printme -f "log" msg_run_func "pkg_${VPM_PKGNAME}_post_compile"
+					pkg_${VPM_PKGNAME}_post_compile
+				fi
+		
+				if commander pkg_${VPM_PKGNAME}_pre_package
+				then
+					printme -f "log" msg_run_func "pkg_${VPM_PKGNAME}_pre_package"
+					pkg_${VPM_PKGNAME}_pre_package
+				fi
+									
+				if [ "${AND_MKPKG}" == "1" ]
+				then
+					log "$(gettext 'Creating vpm package')" 
+					[ "${AND_LDCONFIG}" == "0" ] && MYPARAMS="--noldconfig"  
+					vpm --makepkg --silent ${MYPARAMS} ${P%%/data}
+				fi
+			fi
+		done
+
+		if [ "${MODE}" == "build" ]
+		then
+			if commander pkg_post_compile
+			then
+				printme -f "log" msg_run_func "pkg_post_compile"
+				pkg_post_compile
+			fi
+		fi
+
+		[ "${MODE}" == "build" ] && install_created_packages
+		[ "${MODE}" == "test" ] && private_global_variables
+		
+		printme -f "log" msg_close_build "${VPM_PKGNAME}"
+	fi
+
+	if [ "${MODE}" == "build" ]
+	then
+		if [ "${AND_CLEAN}" == "1" ]
+		then
+			spec_buildir_clean
+		fi
+		
+		log "$(gettext 'Updating date on specfile')"
+		sed -i -e "s/^# lastbuild  :.*/# lastbuild  : $(date +%c)/g" ${VPM_SPECFILE}
+	
+		BUILD_ERRORS="$(grep -E "^ERROR .*: " ${VPM_BUILDIR}/buildlog)"
+		BUILD_WARNS="$(grep -E "^WARN .*: " ${VPM_BUILDIR}/buildlog)"
+
+		if [ -n "${BUILD_ERRORS}" ]
+		then
+			error "$(gettext 'This compilation have build errors\n%s')" "${BUILD_ERRORS}"
+		fi
+
+		if [ -n "${BUILD_WARNS}" ]
+		then
+			error "$(gettext 'This compilation have build errors\n%s')" "${BUILD_WARNS}"
+		fi
+	fi
+
+	[ "${VPM_PKGMULTIPACK}" == "0" ] && printme -f "log" msg_close_build "${VPM_PKGNAME}"
+ 
+	return 0
+}
